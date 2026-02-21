@@ -1,7 +1,7 @@
 from flask import Flask
 from threading import Thread
 import logging
-import socket
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -12,13 +12,12 @@ app = Flask(__name__)
 def home():
     return "Bot ishlamoqda! 🤖"
 
-def find_free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))
-        return s.getsockname()[1]
+@app.route('/health')
+def health():
+    return "OK", 200
 
 def run():
-    port = find_free_port()  # Find free port automatically
+    port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
     logger.info(f"Keep alive server started on port {port}")
 
