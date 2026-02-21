@@ -2492,12 +2492,12 @@ bot_loop = None
 def run_flask():
     app.run(host='0.0.0.0', port=38705, debug=False, use_reloader=False)
 
+# Webhook kodi o'rniga quyidagini ishlating
 async def main():
-    global bot_loop
-    bot_loop = asyncio.get_running_loop()
-    
-    # Start webhook o'rnatish
-    await on_startup()
+    keep_alive()
+    dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
+    await dp.start_polling(bot)
     
     # Flask ni alohida threadda ishga tushirish
     flask_thread = threading.Thread(target=run_flask, daemon=True)
