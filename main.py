@@ -1,11 +1,11 @@
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery
-from aiogram.filters import Command, CommandStart
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram import Bot, Dispatcher, types
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters import Command, CommandStart, Text
+from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from dotenv import load_dotenv
 import os
 import sys
@@ -15,7 +15,8 @@ from googletrans import Translator
 from database import Database
 from keyboards import *
 from keep_alive import keep_alive
-from googletrans import Translator
+
+# Translator
 translator = Translator()
 
 
