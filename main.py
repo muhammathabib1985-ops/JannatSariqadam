@@ -2454,11 +2454,13 @@ async def main():
     from flask import Flask, request
     app = Flask(__name__)
     
+    # ===== BU YERGA QO'SHING =====
     @app.route('/webhook', methods=['POST'])
     async def webhook():
         update = Update.model_validate(await request.json(), context={"bot": bot})
         await dp.feed_update(bot, update)
         return "OK", 200
+    # ===== TUGADI =====
     
     @app.route('/')
     async def home():
@@ -2469,9 +2471,3 @@ async def main():
     
     # Flask ni ishga tushirish
     app.run(host='0.0.0.0', port=38705)
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
