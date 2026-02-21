@@ -1223,80 +1223,11 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
                 "Misol: `8600 1234 5678 9012`"
             )
             
-        # Javobni tekshirish qismida, noto'g'ri javob bo'lganda:
-
-    else:
-        # NOTO'G'RI JAVOB
-        wrong_messages = {
-            'UZ': f"❌ Noto'g'ri javob!\n\nTo'g'ri javob: {correct}",
-            'RU': f"❌ Неправильный ответ!\n\nПравильный ответ: {correct}",
-            'AR': f"❌ إجابة خاطئة!\n\nالإجابة الصحيحة: {correct}",
-            'EN': f"❌ Wrong answer!\n\nCorrect answer: {correct}"
-        }
-        
-        await callback.message.edit_text(
-            wrong_messages.get(lang, wrong_messages['UZ'])
-        )
-        
-        # ===== YANGI QO'SHIMCHA: 30 daqiqa kutish vaqti =====
-        db.set_user_wait(user_id, minutes=30)
-        
-        wait_messages = {
-            'UZ': "⏳ Hurmatli foydalanuvchi!\n\nSiz xato javob berganingiz uchun keyingi savol 30 daqiqadan so'ng ochiladi.\nIltimos, sabr qiling! 🤲",
-            'RU': "⏳ Уважаемый пользователь!\n\nИз-за неверного ответа следующий вопрос будет доступен через 30 минут.\nПожалуйста, наберитесь терпения! 🤲",
-            'AR': "⏳ عزيزي المستخدم!\n\nنظرًا لإجابتك الخاطئة، سيكون السؤال التالي متاحًا بعد 30 دقيقة.\nيرجى التحلي بالصبر! 🤲",
-            'EN': "⏳ Dear user!\n\nDue to your wrong answer, the next question will be available in 30 minutes.\nPlease be patient! 🤲"
-        }
-        
-        await callback.message.answer(
-            wait_messages.get(lang, wait_messages['UZ'])
-        )
-        # ===== TUGADI =====
-        
-        # Admin ga xabar
-        user_name = user_sessions[user_id].get('name', 'Noma\'lum')
-        for admin_id in ADMIN_IDS:
-            try:
-                await bot.send_message(
-                    admin_id,
-                    f"📊 **Javob**\n\n"
-                    f"👤 Foydalanuvchi: {user_name}\n"
-                    f"🆔 ID: `{user_id}`\n"
-                    f"📝 Javob: ❌ Noto'g'ri\n"
-                    f"❓ Savol ID: {question_id}\n"
-                    f"⏳ 30 daqiqa kutish vaqti o'rnatildi"
-                )
-            except:
-                pass
-        
-        # Ko'rilgan savollar ro'yxatini tozalash
-        user_sessions[user_id]['seen_questions'] = []
-        
-        restart_messages = {
-            'UZ': "⚠️ 20 ta savol imkoniyati tugadi. 30 daqiqadan so'ng qayta urinib ko'ring.",
-            'RU': "⚠️ Возможность 20 вопросов закончилась. Попробуйте снова через 30 минут.",
-            'AR': "⚠️ انتهت فرصة 20 سؤال. حاول مرة أخرى بعد 30 دقيقة.",
-            'EN': "⚠️ 20 questions chance ended. Try again in 30 minutes."
-        }
-        
-        await callback.message.answer(
-            restart_messages.get(lang, restart_messages['UZ']),
-            reply_markup=get_main_menu_keyboard(lang)
-        )    
-            
             await callback.message.answer(congrats_msg)
             await state.set_state(RewardState.waiting_for_card)
             await callback.answer()
             return
-    else:
-        # Noto'g'ri javob - sessiyani yakunlash
-        if active_session:
-            db.save_question_answer(user_id, session_id, question_id, selected, False)
-            db.complete_session(session_id, user_id, success=False)
-    # ========== 20 TA SAVOL SESSIYASI TUGADI ==========
-    
-    # Javob natijasi
-    if is_correct:
+        
         # TO'G'RI JAVOB
         correct_messages = {
             'UZ': "✅ To'g'ri javob!",
@@ -1393,8 +1324,12 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
                 all_done_messages.get(lang, all_done_messages['UZ']),
                 reply_markup=get_main_menu_keyboard(lang)
             )
-        
     else:
+        # Noto'g'ri javob - sessiyani yakunlash
+        if active_session:
+            db.save_question_answer(user_id, session_id, question_id, selected, False)
+            db.complete_session(session_id, user_id, success=False)
+        
         # NOTO'G'RI JAVOB
         wrong_messages = {
             'UZ': f"❌ Noto'g'ri javob!\n\nTo'g'ri javob: {correct}",
@@ -1407,7 +1342,22 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
             wrong_messages.get(lang, wrong_messages['UZ'])
         )
         
-        # Admin ga xabar yuborish
+        # ===== YANGI QO'SHIMCHA: 30 daqiqa kutish vaqti =====
+        db.set_user_wait(user_id, minutes=30)
+        
+        wait_messages = {
+            'UZ': "⏳ Hurmatli foydalanuvchi!\n\nSiz xato javob berganingiz uchun keyingi savol 30 daqiqadan so'ng ochiladi.\nIltimos, sabr qiling! 🤲",
+            'RU': "⏳ Уважаемый пользователь!\n\nИз-за неверного ответа следующий вопрос будет доступен через 30 минут.\nПожалуйста, наберитесь терпения! 🤲",
+            'AR': "⏳ عزيزي المستخدم!\n\nنظرًا لإجابتك الخاطئة، سيكون السؤال التالي متاحًا بعد 30 دقيقة.\nيرجى التحلي بالصبر! 🤲",
+            'EN': "⏳ Dear user!\n\nDue to your wrong answer, the next question will be available in 30 minutes.\nPlease be patient! 🤲"
+        }
+        
+        await callback.message.answer(
+            wait_messages.get(lang, wait_messages['UZ'])
+        )
+        # ===== TUGADI =====
+        
+        # Admin ga xabar
         user_name = user_sessions[user_id].get('name', 'Noma\'lum')
         for admin_id in ADMIN_IDS:
             try:
@@ -1417,21 +1367,21 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
                     f"👤 Foydalanuvchi: {user_name}\n"
                     f"🆔 ID: `{user_id}`\n"
                     f"📝 Javob: ❌ Noto'g'ri\n"
-                    f"❓ Savol ID: {question_id}"
+                    f"❓ Savol ID: {question_id}\n"
+                    f"⏳ 30 daqiqa kutish vaqti o'rnatildi"
                 )
             except:
                 pass
         
-        # Qayta start tugmasi
-        restart_messages = {
-            'UZ': "⚠️ 20 ta savol imkoniyati tugadi. Qayta boshlash uchun /start ni bosing.",
-            'RU': "⚠️ Возможность 20 вопросов закончилась. Нажмите /start чтобы начать заново.",
-            'AR': "⚠️ انتهت فرصة 20 سؤال. اضغط /start لبدء جديدة.",
-            'EN': "⚠️ 20 questions chance ended. Press /start to start over."
-        }
-        
         # Ko'rilgan savollar ro'yxatini tozalash
         user_sessions[user_id]['seen_questions'] = []
+        
+        restart_messages = {
+            'UZ': "⚠️ 20 ta savol imkoniyati tugadi. 30 daqiqadan so'ng qayta urinib ko'ring.",
+            'RU': "⚠️ Возможность 20 вопросов закончилась. Попробуйте снова через 30 минут.",
+            'AR': "⚠️ انتهت فرصة 20 سؤال. حاول مرة أخرى بعد 30 دقيقة.",
+            'EN': "⚠️ 20 questions chance ended. Try again in 30 minutes."
+        }
         
         await callback.message.answer(
             restart_messages.get(lang, restart_messages['UZ']),
