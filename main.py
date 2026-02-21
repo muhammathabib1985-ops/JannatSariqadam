@@ -1038,7 +1038,6 @@ async def change_lang_handler(message: Message):
         reply_markup=get_language_reply_keyboard()
     )
 
-# Savollar bo'limi
 @dp.message(lambda msg: msg.text in ["❓ Savollar", "❓ Вопросы", "❓ أسئلة", "❓ Questions"])
 async def questions_handler(message: Message):
     user_id = message.from_user.id
@@ -1046,9 +1045,8 @@ async def questions_handler(message: Message):
     if is_admin(user_id):
         return
     
-    # User sessions ni tekshirish va yaratish
+    # User sessions ni tekshirish
     if user_id not in user_sessions:
-        # BAZADAN TILNI OLISH
         lang = db.get_user_language(user_id)
         user_sessions[user_id] = {'name': '', 'lang': lang, 'seen_questions': []}
         print(f"🆕 Yangi user session yaratildi: {user_id}, til: {lang}")
@@ -1057,48 +1055,52 @@ async def questions_handler(message: Message):
     if 'seen_questions' not in user_sessions[user_id]:
         user_sessions[user_id]['seen_questions'] = []
     
-    # MUHIM: TILNI BAZADAN OLISH (session dan emas)
-    lang = db.get_user_language(user_id)
-    # Session ni ham yangilash
-    user_sessions[user_id]['lang'] = lang
-    
-    print(f"🔍 Foydalanuvchi tili (bazadan): {lang}")
-    
+    lang = user_sessions[user_id].get('lang', 'UZ')
     seen_questions = user_sessions[user_id].get('seen_questions', [])
-    print(f"👁️ Ko'rilgan savollar: {len(seen_questions)} ta")
     
-    # Foydalanuvchi tilidagi savolni olish
+    print(f"🔍 Foydalanuvchi tili: {lang}")
+    print(f"👁️ Ko'rilgan savollar: {seen_questions}")
+    
+    # Foydalanuvchi ko'rmagan savolni olish
     question = db.get_random_question_excluding(lang, seen_questions)
     
     if not question:
         print("❌ Hech qanday faol savol topilmadi!")
-        no_questions = {
-            'UZ': "Hozircha savollar mavjud emas.",
-            'RU': "Пока нет вопросов.",
-            'AR': "لا توجد أسئلة حتى الآن.",
-            'EN': "No questions available yet."
-        }
-        await message.answer(
-            no_questions.get(lang, no_questions['UZ']),
-            reply_markup=get_main_menu_keyboard(lang)
-        )
-        return
+        # Agar barcha savollar ko'rilgan bo'lsa, ro'yxatni tozalash
+        if len(seen_questions) >= db.get_question_count():
+            user_sessions[user_id]['seen_questions'] = []
+            print("🔄 Barcha savollar ko'rilgan, ro'yxat tozalandi")
+            # Qayta urinish
+            question = db.get_random_question_excluding(lang, [])
+        
+        if not question:
+            no_questions = {
+                'UZ': "Hozircha savollar mavjud emas.",
+                'RU': "Пока нет вопросов.",
+                'AR': "لا توجد أسئلة حتى الآن.",
+                'EN': "No questions available yet."
+            }
+            await message.answer(
+                no_questions.get(lang, no_questions['UZ']),
+                reply_markup=get_main_menu_keyboard(lang)
+            )
+            return
     
     q_id, q_text, opt1, opt2, opt3, correct = question
-    
-    # SAVOL TILINI TEKSHIRISH
-    print(f"📝 Savol matni ({lang}): {q_text[:50]}...")
-    print(f"📝 Variant1 ({lang}): {opt1[:30]}...")
     
     # Savolni ko'rilganlar ro'yxatiga qo'shish
     if q_id not in seen_questions:
         user_sessions[user_id]['seen_questions'].append(q_id)
         print(f"➕ Savol ID {q_id} ko'rilganlar ro'yxatiga qo'shildi")
     
+    print(f"📝 Savol matni ({lang}): {q_text[:50]}...")
+    
     user_sessions[user_id]['current_question'] = {
         'id': q_id,
         'correct': correct
     }
+    
+    # Qolgan kod...
     
     question_prefix = {
         'UZ': "❓ Savol",

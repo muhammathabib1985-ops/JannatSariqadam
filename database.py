@@ -254,7 +254,10 @@ class Database:
             if lang not in ['UZ', 'RU', 'AR', 'EN']:
                 lang = 'UZ'
             
-            if excluded_ids:
+            # MUHIM: excluded_ids list ekanligiga ishonch hosil qiling
+            print(f"🔍 Excluded IDs: {excluded_ids}")
+            
+            if excluded_ids and len(excluded_ids) > 0:
                 placeholders = ','.join(['?'] * len(excluded_ids))
                 query = f'''
                     SELECT id, question_{lang}, option1_{lang}, option2_{lang}, option3_{lang}, correct_option 
@@ -281,21 +284,16 @@ class Database:
             
             result = self.cursor.fetchone()
             
+            # Agar natija bo'lmasa va excluded_ids bor bo'lsa, boshqa tilda qidirish
             if not result and excluded_ids and lang != 'UZ':
                 return self.get_random_question('UZ')
             
+            print(f"✅ Tanlangan savol ID: {result[0] if result else 'None'}")
             return result
+            
         except Exception as e:
-            print(f"Error getting random question excluding: {e}")
+            print(f"❌ Error getting random question excluding: {e}")
             return None
-    
-    def get_question_count(self):
-        try:
-            self.cursor.execute('SELECT COUNT(*) FROM questions WHERE is_active = 1')
-            return self.cursor.fetchone()[0]
-        except Exception as e:
-            print(f"Error getting question count: {e}")
-            return 0
     
     def get_all_questions(self):
         try:
