@@ -2398,8 +2398,11 @@ async def handle_webhook(request: Request):
     update = Update.model_validate(await request.json(), context={"bot": bot})
     await dp.feed_update(bot, update)
     return {"ok": True}
+# ... (yuqoridagi barcha importlar va kodlar o'zgarishsiz qoladi) ...
 
-# Startup notification
+# ==== BU JOYDAN BOSHLAB OXIRIGACHA ALMASHTIRING ====
+
+# Startup notification (o'zgarishsiz)
 async def on_startup():
     logger.info("Bot started successfully!")
     logger.info(f"Admin IDs: {ADMIN_IDS}")
@@ -2409,7 +2412,7 @@ async def on_startup():
         logger.info(f"Bot connected: @{me.username}")
         
         # WEBHOOK o'rnatish
-        WEBHOOK_HOST = "https://jannatsariqadam.onrender.com"  # Sizning Render URL
+        WEBHOOK_HOST = "https://jannatsariqadam.onrender.com"  # ✅ O'z URL-ingizga almashtiring!
         WEBHOOK_PATH = "/webhook"
         WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
         
@@ -2421,6 +2424,7 @@ async def on_startup():
         logger.error(f"Failed to connect to Telegram: {e}")
         return
     
+    # Adminlarga xabar (o'zgarishsiz)
     for admin_id in ADMIN_IDS:
         try:
             await bot.send_message(
@@ -2441,37 +2445,67 @@ async def on_startup():
     print("🌐 Avtomatik tarjima tizimi faol")
     print("="*50 + "\n")
 
-# Shutdown handler
+# Shutdown handler (o'zgarishsiz)
 async def on_shutdown():
     logger.info("Bot shutting down...")
     await bot.session.close()
     db.close()
 
-# Main function
-async def main():
-    keep_alive()
-    
-    # Flask app for webhook
-    app = Flask(__name__)
-    
-    @app.route("/webhook", methods=["POST"])
-    async def webhook():
-        update = Update.model_validate(await request.json(), context={"bot": bot})
+# Flask ilovasini yaratish
+from flask import Flask, request, jsonify
+import threading
+
+app = Flask(__name__)
+
+# Webhook endpointi (sinxron emas, async ishlashi uchun)
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    update_data = request.get_json()
+    asyncio.run_coroutine_threadsafe(process_update(update_data), bot_loop)
+    return 'OK', 200
+
+@app.route('/')
+def home():
+    return "Bot ishlamoqda!", 200
+
+async def process_update(update_data):
+    try:
+        update = Update.model_validate(update_data, context={"bot": bot})
         await dp.feed_update(bot, update)
-        return "OK", 200
+    except Exception as e:
+        logger.error(f"Error processing update: {e}")
+
+# Bot va Flask ni birga ishga tushirish
+bot_loop = None
+
+def run_flask():
+    app.run(host='0.0.0.0', port=38705, debug=False, use_reloader=False)
+
+async def main():
+    global bot_loop
+    bot_loop = asyncio.get_running_loop()
     
-    @app.route("/")
-    async def home():
-        return "Bot ishlamoqda!", 200
-    
-    # Startup
+    # Start webhook o'rnatish
     await on_startup()
     
-    # Flask ni ishga tushirish
-    app.run(host="0.0.0.0", port=38705)
+    # Flask ni alohida threadda ishga tushirish
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
+    # Botni asosiy loopda ushlab turish
+    try:
+        # Botni to'xtatib turish (polling ishlatilmaydi)
+        while True:
+            await asyncio.sleep(3600)  # 1 soat uxla
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await on_shutdown()
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
