@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, Update
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -11,8 +11,8 @@ import os
 import sys
 from datetime import datetime
 from googletrans import Translator
-from flask import Flask, request
-from aiogram.types import Update
+from flask import Flask, request, jsonify, Request  # Request qo'shildi!
+import threading
 
 from database import Database
 from keyboards import *
