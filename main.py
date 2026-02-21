@@ -2400,7 +2400,7 @@ async def on_shutdown():
     logger.info("Bot shutting down...")
     await bot.session.close()
     db.close()
-
+    
 # Startup notification
 async def on_startup():
     logger.info("Bot started successfully!")
@@ -2409,6 +2409,12 @@ async def on_startup():
     try:
         me = await bot.get_me()
         logger.info(f"Bot connected: @{me.username}")
+        
+        # WEBHOOK o'rnatish (MUHIM!)
+        webhook_url = "https://jannatsariqadam.onrender.com/webhook"  # Sizning Render URL
+        await bot.set_webhook(webhook_url)
+        logger.info(f"Webhook set to: {webhook_url}")
+        
     except Exception as e:
         logger.error(f"Failed to connect to Telegram: {e}")
         return
@@ -2433,6 +2439,32 @@ async def on_startup():
     print("🌐 Avtomatik tarjima tizimi faol")
     print("="*50 + "\n")
 
+# Shutdown handler
+async def on_shutdown():
+    logger.info("Bot shutting down...")
+    await bot.session.close()
+    db.close()
+
+# WEBHOOK uchun asosiy funksiya
+if __name__ == "__main__":
+    from aiogram import executor
+    
+    # WEBHOOK sozlamalari
+    WEBHOOK_HOST = "https://jannatsariqadam.onrender.com"  # Render URL
+    WEBHOOK_PATH = "/webhook"
+    WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+    
+    # WEBHOOK ni ishga tushirish
+    executor.start_webhook(
+        dispatcher=dp,
+        webhook_path=WEBHOOK_PATH,
+        on_startup=on_startup,
+        on_shutdown=on_shutdown,
+        skip_updates=True,
+        host="0.0.0.0",
+        port=38705
+    )
+
 # Main function
 async def main():
     keep_alive()
@@ -2450,7 +2482,11 @@ async def main():
         await bot.session.close()
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
+    executor.start_webhook(
+        dispatcher=dp,
+        webhook_path="/webhook",
+        on_startup=on_startup,
+        skip_updates=True,
+        host="0.0.0.0",
+        port=38705
+    )
