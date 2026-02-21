@@ -1,16 +1,18 @@
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher, types
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters import Command, CommandStart, Text
-from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram import Bot, Dispatcher, F
+from aiogram.types import Message, CallbackQuery
+from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
 import os
 import sys
 from datetime import datetime
 from googletrans import Translator
+from flask import Flask, request
+from aiogram.types import Update
 
 from database import Database
 from keyboards import *
@@ -18,7 +20,6 @@ from keep_alive import keep_alive
 
 # Translator
 translator = Translator()
-
 
 # Load environment variables
 load_dotenv()
@@ -35,8 +36,6 @@ if ADMIN_IDS_STR:
         except:
             pass
 
-print(f"✅ Loaded Admin IDs: {ADMIN_IDS}")
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -45,19 +44,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize bot
-try:
-    bot = Bot(token=BOT_TOKEN)
-    logger.info("Bot initialized successfully")
-except Exception as e:
-    logger.error(f"Failed to initialize bot: {e}")
-    sys.exit(1)
-
+bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-# Initialize database and translator
+# Initialize database
 db = Database()
-translator = Translator()
 
 # States
 class RegisterState(StatesGroup):
@@ -2401,7 +2393,12 @@ async def on_shutdown():
     logger.info("Bot shutting down...")
     await bot.session.close()
     db.close()
-    
+# Webhook handler
+async def handle_webhook(request: Request):
+    update = Update.model_validate(await request.json(), context={"bot": bot})
+    await dp.feed_update(bot, update)
+    return {"ok": True}
+
 # Startup notification
 async def on_startup():
     logger.info("Bot started successfully!")
@@ -2411,10 +2408,14 @@ async def on_startup():
         me = await bot.get_me()
         logger.info(f"Bot connected: @{me.username}")
         
-        # WEBHOOK o'rnatish (MUHIM!)
-        webhook_url = "https://jannatsariqadam.onrender.com/webhook"  # Sizning Render URL
-        await bot.set_webhook(webhook_url)
-        logger.info(f"Webhook set to: {webhook_url}")
+        # WEBHOOK o'rnatish
+        WEBHOOK_HOST = "https://jannatsariqadam.onrender.com"  # Sizning Render URL
+        WEBHOOK_PATH = "/webhook"
+        WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+        
+        await bot.delete_webhook()
+        await bot.set_webhook(WEBHOOK_URL)
+        logger.info(f"Webhook set to: {WEBHOOK_URL}")
         
     except Exception as e:
         logger.error(f"Failed to connect to Telegram: {e}")
@@ -2446,54 +2447,17 @@ async def on_shutdown():
     await bot.session.close()
     db.close()
 
-# WEBHOOK uchun asosiy funksiya
-if __name__ == "__main__":
-    from aiogram import executor
-    
-    # WEBHOOK sozlamalari
-    WEBHOOK_HOST = "https://jannatsariqadam.onrender.com"  # Render URL
-    WEBHOOK_PATH = "/webhook"
-    WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
-    
-    # WEBHOOK ni ishga tushirish
-    executor.start_webhook(
-        dispatcher=dp,
-        webhook_path=WEBHOOK_PATH,
-        on_startup=on_startup,
-        on_shutdown=on_shutdown,
-        skip_updates=True,
-        host="0.0.0.0",
-        port=38705
-    )
-
-# main.py ning oxirgi qismini O'ZGARTIRING:
-
-# Webhook handler
-async def handle_webhook(request: Request):
-    update = telegram.Update.de_json(await request.json(), bot)
-    await dp.process_update(update)
-    return Response()
-
 # Main function
 async def main():
     keep_alive()
     
-    # Webhook sozlamalari
-    WEBHOOK_HOST = "https://jannatsariqadam.onrender.com"
-    WEBHOOK_PATH = "/webhook"
-    WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
-    
-    # Bot va dispatcher
-    await bot.delete_webhook()
-    await bot.set_webhook(WEBHOOK_URL)
-    
-    # Flask app
+    # Flask app for webhook
     app = Flask(__name__)
     
     @app.route("/webhook", methods=["POST"])
     async def webhook():
-        update = telegram.Update.de_json(await request.json(), bot)
-        await dp.process_update(update)
+        update = Update.model_validate(await request.json(), context={"bot": bot})
+        await dp.feed_update(bot, update)
         return "OK", 200
     
     @app.route("/")
@@ -2505,6 +2469,9 @@ async def main():
     
     # Flask ni ishga tushirish
     app.run(host="0.0.0.0", port=38705)
-    
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
