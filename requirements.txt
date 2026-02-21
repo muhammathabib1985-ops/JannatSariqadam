@@ -1,4 +1,6 @@
-aiogram==3.3.0
+aiogram==3.0.0
 python-dotenv==1.0.0
-flask==3.0.0
-aiofiles==23.2.1
+googletrans==3.1.0a0
+flask==2.3.3
+sqlite3
+asyncio

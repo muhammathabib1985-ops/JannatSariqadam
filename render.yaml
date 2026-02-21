@@ -1,0 +1,7 @@
+services:
+  - type: worker
+    name: islamic-bot
+    env: python
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python main.py
+    plan: free
