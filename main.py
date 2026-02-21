@@ -659,20 +659,31 @@ async def handle_language_selection(message: Message, state: FSMContext):
     }
     lang = lang_map.get(text, 'UZ')
     
-    if user_id not in user_sessions:
-        user_sessions[user_id] = {'name': '', 'lang': 'UZ'}
+    print(f"🌐 Til tanlandi: {lang} (user_id: {user_id})")
     
-    user_sessions[user_id]['lang'] = lang
+    # BAZAGA SAQLASH
     db.set_user_language(user_id, lang)
     
-    if user_sessions[user_id].get('name'):
-        name = user_sessions[user_id]['name']
+    # SESSION NI YANGILASH
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {'name': '', 'lang': lang, 'seen_questions': []}
+    else:
+        user_sessions[user_id]['lang'] = lang
+    
+    # Ism bor-yo'qligini tekshirish
+    db.cursor.execute('SELECT first_name FROM users WHERE user_id = ?', (user_id,))
+    result = db.cursor.fetchone()
+    
+    if result and result[0]:
+        # Ism bor - menyuga o'tish
+        name = result[0]
         welcome_text = await translate_text(f"Assalomu Aleykum {name}!\n\nTil muvaffaqiyatli o'zgartirildi.", lang)
         await message.answer(
             welcome_text,
             reply_markup=get_main_menu_keyboard(lang)
         )
     else:
+        # Ism yo'q - ism so'rash
         name_prompt = await translate_text("Ismingizni kiriting:", lang)
         await message.answer(name_prompt)
         await state.set_state(RegisterState.waiting_for_name)
@@ -1042,8 +1053,9 @@ async def questions_handler(message: Message):
     if is_admin(user_id):
         return
     
-    # User sessions ni tekshirish
+    # User sessions ni tekshirish va yaratish
     if user_id not in user_sessions:
+        # BAZADAN TILNI OLISH
         lang = db.get_user_language(user_id)
         user_sessions[user_id] = {'name': '', 'lang': lang, 'seen_questions': []}
         print(f"🆕 Yangi user session yaratildi: {user_id}, til: {lang}")
@@ -1052,13 +1064,17 @@ async def questions_handler(message: Message):
     if 'seen_questions' not in user_sessions[user_id]:
         user_sessions[user_id]['seen_questions'] = []
     
-    lang = user_sessions[user_id].get('lang', 'UZ')
-    seen_questions = user_sessions[user_id].get('seen_questions', [])
+    # MUHIM: TILNI BAZADAN OLISH (session dan emas)
+    lang = db.get_user_language(user_id)
+    # Session ni ham yangilash
+    user_sessions[user_id]['lang'] = lang
     
-    print(f"🔍 Foydalanuvchi tili: {lang}")
+    print(f"🔍 Foydalanuvchi tili (bazadan): {lang}")
+    
+    seen_questions = user_sessions[user_id].get('seen_questions', [])
     print(f"👁️ Ko'rilgan savollar: {len(seen_questions)} ta")
     
-    # Foydalanuvchi ko'rmagan savolni olish
+    # Foydalanuvchi tilidagi savolni olish
     question = db.get_random_question_excluding(lang, seen_questions)
     
     if not question:
@@ -1077,12 +1093,14 @@ async def questions_handler(message: Message):
     
     q_id, q_text, opt1, opt2, opt3, correct = question
     
+    # SAVOL TILINI TEKSHIRISH
+    print(f"📝 Savol matni ({lang}): {q_text[:50]}...")
+    print(f"📝 Variant1 ({lang}): {opt1[:30]}...")
+    
     # Savolni ko'rilganlar ro'yxatiga qo'shish
     if q_id not in seen_questions:
         user_sessions[user_id]['seen_questions'].append(q_id)
         print(f"➕ Savol ID {q_id} ko'rilganlar ro'yxatiga qo'shildi")
-    
-    print(f"📝 Savol matni ({lang}): {q_text[:50]}...")
     
     user_sessions[user_id]['current_question'] = {
         'id': q_id,
@@ -1096,21 +1114,19 @@ async def questions_handler(message: Message):
         'EN': "❓ Question"
     }
     
-    # ========== MUKOFOT MATNI QO'SHILADI ==========
-    # 20 ta savol sessiyasini tekshirish
+    # 20 ta savol mukofot matni
     active_session = db.get_active_session(user_id)
     reward_text = ""
     
     if active_session:
-        # active_session[0] = session_id, active_session[1] = correct_count
         correct_count = active_session[1] if len(active_session) > 1 else 0
         remaining = 20 - correct_count
         reward_text = (
             f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
-            f"🎁 **MUKOFOT DASTURI**\n"
-            f"✅ To'g'ri javoblar: {correct_count}/20\n"
-            f"⏳ Qolgan: {remaining} ta\n"
-            f"💰 Mukofot: 200 000 so'm\n"
+            f"🎁 **20/20 MUKOFOT**\n"
+            f"✅ {correct_count}/20 to'g'ri\n"
+            f"⏳ {remaining} ta qoldi\n"
+            f"💰 200 000 so'm\n"
             f"━━━━━━━━━━━━━━━━━━━━\n\n"
         )
     else:
@@ -1120,14 +1136,13 @@ async def questions_handler(message: Message):
             f"💰 **200 000 SO'M YUTIB OLING!**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n\n"
         )
-    # ========== MUKOFOT MATNI TUGADI ==========
     
-    # Savol matnini yuborish (mukofot matni bilan)
+    # Savol matnini yuborish
     await message.answer(
         f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}{reward_text}"
     )
     
-    # Variantlarni yuborish
+    # Variantlarni yuborish (foydalanuvchi tilida)
     await message.answer(
         "👇 Javob variantlari:",
         reply_markup=get_options_inline_keyboard((opt1, opt2, opt3), q_id, lang)
