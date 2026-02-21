@@ -2413,7 +2413,8 @@ async def handle_webhook(request: Request):
 
 # ==== BU JOYDAN BOSHLAB OXIRIGACHA ALMASHTIRING ====
 
-# Startup notification (o'zgarishsiz)
+# main.py faylining oxirgi qismi (WEBHOOK uchun)
+
 async def on_startup():
     logger.info("Bot started successfully!")
     logger.info(f"Admin IDs: {ADMIN_IDS}")
@@ -2422,12 +2423,12 @@ async def on_startup():
         me = await bot.get_me()
         logger.info(f"Bot connected: @{me.username}")
         
-        # WEBHOOK o'rnatish
-        WEBHOOK_HOST = "https://jannatsariqadam.onrender.com"  # ✅ O'z URL-ingizga almashtiring!
-        WEBHOOK_PATH = "/webhook"
-        WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+        # WEBHOOK o'rnatish (Render URL)
+        WEBHOOK_URL = "https://jannatsariqadam.onrender.com/webhook"
         
+        # Avval eski webhook ni o'chirish
         await bot.delete_webhook()
+        # Yangi webhook o'rnatish
         await bot.set_webhook(WEBHOOK_URL)
         logger.info(f"Webhook set to: {WEBHOOK_URL}")
         
@@ -2435,88 +2436,42 @@ async def on_startup():
         logger.error(f"Failed to connect to Telegram: {e}")
         return
     
-    # Adminlarga xabar (o'zgarishsiz)
-    for admin_id in ADMIN_IDS:
-        try:
-            await bot.send_message(
-                admin_id,
-                "✅ Bot ishga tushdi!\n\n"
-                "Bot muvaffaqiyatli ishga tushirildi.\n"
-                "Barcha tillarga avtomatik tarjima tizimi faol."
-            )
-        except:
-            pass
-    
-    print("\n" + "="*50)
-    print("🤖 ISLOMIY SAVOL-JAVOB BOTI")
-    print("="*50)
-    print("✅ Bot ishga tushdi!")
-    print(f"👤 Adminlar: {ADMIN_IDS}")
-    print(f"📊 Jami foydalanuvchilar: {db.get_total_users()}")
-    print("🌐 Avtomatik tarjima tizimi faol")
-    print("="*50 + "\n")
+    # Adminlarga xabar...
 
-# Shutdown handler (o'zgarishsiz)
+# Shutdown handler
 async def on_shutdown():
     logger.info("Bot shutting down...")
+    # Webhook ni o'chirish
+    await bot.delete_webhook()
     await bot.session.close()
     db.close()
 
-# Flask ilovasini yaratish
-from flask import Flask, request, jsonify
-import threading
-
-app = Flask(__name__)
-
-# Webhook endpointi (sinxron emas, async ishlashi uchun)
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    update_data = request.get_json()
-    asyncio.run_coroutine_threadsafe(process_update(update_data), bot_loop)
-    return 'OK', 200
-
-@app.route('/')
-def home():
-    return "Bot ishlamoqda!", 200
-
-async def process_update(update_data):
-    try:
-        update = Update.model_validate(update_data, context={"bot": bot})
-        await dp.feed_update(bot, update)
-    except Exception as e:
-        logger.error(f"Error processing update: {e}")
-
-# Bot va Flask ni birga ishga tushirish
-bot_loop = None
-
-def run_flask():
-    app.run(host='0.0.0.0', port=38705, debug=False, use_reloader=False)
-
-# Webhook kodi o'rniga quyidagini ishlating
+# Main function - WEBHOOK uchun
 async def main():
     keep_alive()
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
-    await dp.start_polling(bot)
     
-    # Flask ni alohida threadda ishga tushirish
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
+    # Flask ilovasini yaratish
+    from flask import Flask, request
+    app = Flask(__name__)
     
-    # Botni asosiy loopda ushlab turish
-    try:
-        # Botni to'xtatib turish (polling ishlatilmaydi)
-        while True:
-            await asyncio.sleep(3600)  # 1 soat uxla
-    except asyncio.CancelledError:
-        pass
-    finally:
-        await on_shutdown()
+    @app.route('/webhook', methods=['POST'])
+    async def webhook():
+        update = Update.model_validate(await request.json(), context={"bot": bot})
+        await dp.feed_update(bot, update)
+        return "OK", 200
+    
+    @app.route('/')
+    async def home():
+        return "Bot ishlamoqda!", 200
+    
+    # Startup
+    await on_startup()
+    
+    # Flask ni ishga tushirish
+    app.run(host='0.0.0.0', port=38705)
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
-    except Exception as e:
-        logger.error(f"Fatal error: {e}")
