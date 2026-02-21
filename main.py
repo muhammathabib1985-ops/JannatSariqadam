@@ -2465,28 +2465,45 @@ if __name__ == "__main__":
         port=38705
     )
 
+# main.py ning oxirgi qismini O'ZGARTIRING:
+
+# Webhook handler
+async def handle_webhook(request: Request):
+    update = telegram.Update.de_json(await request.json(), bot)
+    await dp.process_update(update)
+    return Response()
+
 # Main function
 async def main():
     keep_alive()
     
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
+    # Webhook sozlamalari
+    WEBHOOK_HOST = "https://jannatsariqadam.onrender.com"
+    WEBHOOK_PATH = "/webhook"
+    WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
     
-    try:
-        await dp.start_polling(bot)
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-    finally:
-        await bot.session.close()
-
+    # Bot va dispatcher
+    await bot.delete_webhook()
+    await bot.set_webhook(WEBHOOK_URL)
+    
+    # Flask app
+    app = Flask(__name__)
+    
+    @app.route("/webhook", methods=["POST"])
+    async def webhook():
+        update = telegram.Update.de_json(await request.json(), bot)
+        await dp.process_update(update)
+        return "OK", 200
+    
+    @app.route("/")
+    async def home():
+        return "Bot ishlamoqda!", 200
+    
+    # Startup
+    await on_startup()
+    
+    # Flask ni ishga tushirish
+    app.run(host="0.0.0.0", port=38705)
+    
 if __name__ == "__main__":
-    executor.start_webhook(
-        dispatcher=dp,
-        webhook_path="/webhook",
-        on_startup=on_startup,
-        skip_updates=True,
-        host="0.0.0.0",
-        port=38705
-    )
+    asyncio.run(main())
