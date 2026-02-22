@@ -1045,7 +1045,7 @@ async def questions_handler(message: Message):
     if is_admin(user_id):
         return
     
-    # ===== KUTISH VAQTINI TEKSHIRISH =====
+    # Kutish vaqtini tekshirish
     is_waiting, remaining = db.check_user_wait(user_id)
     if is_waiting:
         lang = user_sessions.get(user_id, {}).get('lang', 'UZ')
@@ -1057,32 +1057,24 @@ async def questions_handler(message: Message):
         }
         await message.answer(wait_messages.get(lang, wait_messages['UZ']))
         return
-    # ===== KUTISH VAQTINI TEKSHIRISH TUGADI =====
     
     # User sessions ni tekshirish
     if user_id not in user_sessions:
         lang = db.get_user_language(user_id)
         user_sessions[user_id] = {'name': '', 'lang': lang, 'seen_questions': []}
-        print(f"🆕 Yangi user session yaratildi: {user_id}, til: {lang}")
     
-    # 'seen_questions' kaliti mavjudligini tekshirish
     if 'seen_questions' not in user_sessions[user_id]:
         user_sessions[user_id]['seen_questions'] = []
     
     lang = user_sessions[user_id].get('lang', 'UZ')
     seen_questions = user_sessions[user_id].get('seen_questions', [])
     
-    print(f"🔍 Foydalanuvchi tili: {lang}")
-    print(f"👁️ Ko'rilgan savollar: {seen_questions}")
-    
     # Foydalanuvchi ko'rmagan savolni olish
     question = db.get_random_question_excluding(lang, seen_questions)
     
     if not question:
-        print("❌ Hech qanday faol savol topilmadi!")
         if len(seen_questions) >= db.get_question_count():
             user_sessions[user_id]['seen_questions'] = []
-            print("🔄 Barcha savollar ko'rilgan, ro'yxat tozalandi")
             question = db.get_random_question_excluding(lang, [])
         
         if not question:
@@ -1092,21 +1084,30 @@ async def questions_handler(message: Message):
                 'AR': "لا توجد أسئلة حتى الآن.",
                 'EN': "No questions available yet."
             }
-            await message.answer(
-                no_questions.get(lang, no_questions['UZ']),
-                reply_markup=get_main_menu_keyboard(lang)
-            )
+            await message.answer(no_questions.get(lang, no_questions['UZ']))
             return
     
     q_id, q_text, opt1, opt2, opt3, correct = question
     
+    # To'g'ri javob matnini olish (variantlardan)
+    correct_answer_text = ""
+    if correct == 1:
+        correct_answer_text = opt1
+    elif correct == 2:
+        correct_answer_text = opt2
+    else:
+        correct_answer_text = opt3
+    
+    # Savolni ko'rilganlar ro'yxatiga qo'shish
     if q_id not in seen_questions:
         user_sessions[user_id]['seen_questions'].append(q_id)
-        print(f"➕ Savol ID {q_id} ko'rilganlar ro'yxatiga qo'shildi")
     
+    # Joriy savol ma'lumotlarini saqlash
     user_sessions[user_id]['current_question'] = {
         'id': q_id,
-        'correct': correct
+        'correct': correct,
+        'correct_text': correct_answer_text.lower().strip(),  # Kichik harf va probellarni tozalab
+        'options': [opt1, opt2, opt3]
     }
     
     # Mukofot matni
@@ -1123,6 +1124,7 @@ async def questions_handler(message: Message):
             f"⏳ Qolgan: {remaining_q} ta\n"
             f"💰 Mukofot: 200 000 so'm\n"
             f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📝 **Javobingizni yozib yuboring:**"
         )
     
     question_prefix = {
@@ -1132,53 +1134,61 @@ async def questions_handler(message: Message):
         'EN': "❓ Question"
     }
     
+    # FAQAT SAVOL MATNI - VARIANTLARSIZ
     await message.answer(
         f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}{reward_text}"
     )
-    
-    await message.answer(
-        "👇 Javob variantlari:",
-        reply_markup=get_options_inline_keyboard((opt1, opt2, opt3), q_id, lang)
-    )
 
-# Javobni tekshirish
-@dp.callback_query(F.data.startswith('answer_'))
-async def handle_answer(callback: CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
+@dp.message()
+async def handle_text_answer(message: Message, state: FSMContext):
+    user_id = message.from_user.id
     
     if is_admin(user_id):
-        await callback.answer()
         return
     
-    # User sessions ni tekshirish
-    if user_id not in user_sessions:
-        lang = db.get_user_language(user_id)
-        user_sessions[user_id] = {'name': '', 'lang': lang, 'seen_questions': []}
+    # Agar foydalanuvchi registratsiya jarayonida bo'lsa
+    current_state = await state.get_state()
+    if current_state:
+        return
     
-    # 'seen_questions' kaliti mavjudligini tekshirish
-    if 'seen_questions' not in user_sessions[user_id]:
-        user_sessions[user_id]['seen_questions'] = []
+    # Foydalanuvchi sessiyasini tekshirish
+    if user_id not in user_sessions or 'current_question' not in user_sessions[user_id]:
+        # Agar joriy savol bo'lmasa, oddiy xabar
+        lang = user_sessions.get(user_id, {}).get('lang', 'UZ')
+        await message.answer("Iltimos, avval '❓ Savollar' tugmasini bosing.")
+        return
+    
+    # Kutish vaqtini tekshirish
+    is_waiting, remaining = db.check_user_wait(user_id)
+    if is_waiting:
+        lang = user_sessions.get(user_id, {}).get('lang', 'UZ')
+        wait_messages = {
+            'UZ': f"⏳ Siz xato javob berganingiz uchun {remaining} daqiqa kutishingiz kerak.",
+            'RU': f"⏳ Из-за неверного ответа вам нужно подождать {remaining} минут.",
+            'AR': f"⏳ بسبب إجابتك الخاطئة، عليك الانتظار لمدة {remaining} دقيقة.",
+            'EN': f"⏳ Due to wrong answer, you need to wait {remaining} minutes."
+        }
+        await message.answer(wait_messages.get(lang, wait_messages['UZ']))
+        return
     
     lang = user_sessions[user_id].get('lang', 'UZ')
-    seen_questions = user_sessions[user_id].get('seen_questions', [])
     
-    # Javob ma'lumotlarini olish
-    parts = callback.data.split('_')
-    question_id = int(parts[1])
-    selected = int(parts[2])
+    # Joriy savol ma'lumotlarini olish
+    current_q = user_sessions[user_id]['current_question']
+    question_id = current_q['id']
+    correct_text = current_q['correct_text']
+    correct = current_q['correct']
     
-    current_q = user_sessions.get(user_id, {}).get('current_question', {})
-    correct = current_q.get('correct', 0)
+    # Foydalanuvchi javobini tozalash
+    user_answer = message.text.lower().strip()
     
-    is_correct = (selected == correct)
+    # Javobni tekshirish
+    is_correct = (user_answer == correct_text)
     
     # Javobni bazaga saqlash
-    db.save_answer(user_id, question_id, selected, is_correct)
-    
-    # Statistika yangilash
+    db.save_answer(user_id, question_id, 0, is_correct)  # selected_option=0 (matnli javob)
     db.update_user_stats(user_id, is_correct)
     
-    # ========== 20 TA SAVOL SESSIYASINI TEKSHIRISH ==========
     # 20 ta savol sessiyasini tekshirish
     active_session = db.get_active_session(user_id)
     session_id = None
@@ -1187,48 +1197,36 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
         session_id = active_session[0]
     
     if is_correct:
-        # To'g'ri javob bo'lsa
+        # TO'G'RI JAVOB
         if not active_session:
-            # Yangi sessiya boshlash
             session_id = db.start_20_questions_session(user_id)
             if session_id:
-                db.save_question_answer(user_id, session_id, question_id, selected, True)
-                # Yangilangan sessiya ma'lumotlarini olish
+                db.save_question_answer(user_id, session_id, question_id, 0, True)
                 active_session = db.get_active_session(user_id)
         else:
-            # Mavjud sessiyaga qo'shish
-            db.save_question_answer(user_id, session_id, question_id, selected, True)
-            # Yangilangan sessiya ma'lumotlarini olish
+            db.save_question_answer(user_id, session_id, question_id, 0, True)
             active_session = db.get_active_session(user_id)
         
         # 20 ta savolga yetdimi?
         if active_session and active_session[1] >= 20:
-            # Muvaffaqiyat!
             db.complete_session(session_id, user_id, success=True)
-            
-            # Mukofot yaratish
             reward_id = db.create_reward(user_id, session_id)
             
-            # Tabriklash
             congrats_msg = (
                 "🎉 **TABRIKLAYMIZ!** 🎉\n\n"
                 "Siz 20 ta savolga to'g'ri javob berdingiz!\n\n"
                 "✅ Barcha savollar to'g'ri\n"
                 "💰 Mukofot: 200 000 so'm\n\n"
-                "Ilmingiz ziyoda bo'lsin!\n"
-                "Allohning O'zi madadkor bo'lsin!\n\n"
                 "━━━━━━━━━━━━━━━━━━━━\n"
                 "💳 **Iltimos, karta raqamingizni kiriting:**\n"
-                "Adminimiz tekshirib, mukofot pulingizni tashlab beradi.\n\n"
                 "Misol: `8600 1234 5678 9012`"
             )
             
-            await callback.message.answer(congrats_msg)
+            await message.answer(congrats_msg)
             await state.set_state(RewardState.waiting_for_card)
-            await callback.answer()
             return
         
-        # TO'G'RI JAVOB
+        # To'g'ri javob xabari
         correct_messages = {
             'UZ': "✅ To'g'ri javob!",
             'RU': "✅ Правильный ответ!",
@@ -1236,18 +1234,16 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
             'EN': "✅ Correct answer!"
         }
         
-        # Progress matni
         progress = ""
         if active_session:
             progress = f"\n\n📊 20/20: {active_session[1]}/20 to'g'ri"
         
-        # Tabriklash va konfetti
-        await callback.message.edit_text(
+        await message.answer(
             f"{correct_messages.get(lang, correct_messages['UZ'])}{progress}\n\n✨ Tabriklaymiz! ✨"
         )
-        await callback.message.answer("🎉 ⭐️ 🌟 ✨ ⭐️ 🌟 🎉")
+        await message.answer("🎉 ⭐️ 🌟 ✨ ⭐️ 🌟 🎉")
         
-        # Admin ga xabar yuborish
+        # Admin ga xabar
         user_name = user_sessions[user_id].get('name', 'Noma\'lum')
         for admin_id in ADMIN_IDS:
             try:
@@ -1256,16 +1252,17 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
                     f"📊 **Javob**\n\n"
                     f"👤 Foydalanuvchi: {user_name}\n"
                     f"🆔 ID: `{user_id}`\n"
-                    f"📝 Javob: ✅ To'g'ri\n"
+                    f"📝 Javob: ✅ To'g'ri (matn)\n"
                     f"❓ Savol ID: {question_id}"
                 )
             except:
                 pass
         
-        # KEYINGI SAVOLGA AVTOMATIK O'TISH
-        await asyncio.sleep(1)  # 1 soniya kutish
+        # Yangi savolni avtomatik yuborish
+        await asyncio.sleep(1)
         
-        # Yangi savol olish (ko'rilmagan)
+        # Yangi savol olish
+        seen_questions = user_sessions[user_id].get('seen_questions', [])
         new_question = db.get_random_question_excluding(lang, seen_questions)
         
         if new_question:
@@ -1275,19 +1272,22 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
             if q_id not in seen_questions:
                 user_sessions[user_id]['seen_questions'].append(q_id)
             
+            # Yangi to'g'ri javob matnini olish
+            correct_answer_text = ""
+            if correct == 1:
+                correct_answer_text = opt1
+            elif correct == 2:
+                correct_answer_text = opt2
+            else:
+                correct_answer_text = opt3
+            
             user_sessions[user_id]['current_question'] = {
                 'id': q_id,
-                'correct': correct
+                'correct': correct,
+                'correct_text': correct_answer_text.lower().strip(),
+                'options': [opt1, opt2, opt3]
             }
             
-            question_prefix = {
-                'UZ': "❓ Savol",
-                'RU': "❓ Вопрос",
-                'AR': "❓ سؤال",
-                'EN': "❓ Question"
-            }
-            
-            # Mukofot matni bilan savolni yuborish
             active_session = db.get_active_session(user_id)
             reward_text = ""
             
@@ -1301,18 +1301,20 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
                     f"⏳ Qolgan: {remaining} ta\n"
                     f"💰 Mukofot: 200 000 so'm\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"📝 **Javobingizni yozib yuboring:**"
                 )
             
-            await callback.message.answer(
+            question_prefix = {
+                'UZ': "❓ Savol",
+                'RU': "❓ Вопрос",
+                'AR': "❓ سؤال",
+                'EN': "❓ Question"
+            }
+            
+            await message.answer(
                 f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}{reward_text}"
             )
-            
-            await callback.message.answer(
-                "👇 Javob variantlari:",
-                reply_markup=get_options_inline_keyboard((opt1, opt2, opt3), q_id, lang)
-            )
         else:
-            # Barcha savollar tugagan bo'lsa
             all_done_messages = {
                 'UZ': "🎉 Tabriklaymiz! Siz barcha savollarni yakunladingiz!",
                 'RU': "🎉 Поздравляем! Вы завершили все вопросы!",
@@ -1320,30 +1322,28 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
                 'EN': "🎉 Congratulations! You have completed all questions!"
             }
             
-            await callback.message.answer(
+            await message.answer(
                 all_done_messages.get(lang, all_done_messages['UZ']),
                 reply_markup=get_main_menu_keyboard(lang)
             )
+    
     else:
-        # Noto'g'ri javob - sessiyani yakunlash
+        # NOTO'G'RI JAVOB
         if active_session:
-            db.save_question_answer(user_id, session_id, question_id, selected, False)
+            db.save_question_answer(user_id, session_id, question_id, 0, False)
             db.complete_session(session_id, user_id, success=False)
         
-        # NOTO'G'RI JAVOB
+        # 30 daqiqa kutish vaqti
+        db.set_user_wait(user_id, minutes=30)
+        
         wrong_messages = {
-            'UZ': f"❌ Noto'g'ri javob!\n\nTo'g'ri javob: {correct}",
-            'RU': f"❌ Неправильный ответ!\n\nПравильный ответ: {correct}",
-            'AR': f"❌ إجابة خاطئة!\n\nالإجابة الصحيحة: {correct}",
-            'EN': f"❌ Wrong answer!\n\nCorrect answer: {correct}"
+            'UZ': f"❌ Noto'g'ri javob!\n\nTo'g'ri javob: {current_q['options'][correct-1]}",
+            'RU': f"❌ Неправильный ответ!\n\nПравильный ответ: {current_q['options'][correct-1]}",
+            'AR': f"❌ إجابة خاطئة!\n\nالإجابة الصحيحة: {current_q['options'][correct-1]}",
+            'EN': f"❌ Wrong answer!\n\nCorrect answer: {current_q['options'][correct-1]}"
         }
         
-        await callback.message.edit_text(
-            wrong_messages.get(lang, wrong_messages['UZ'])
-        )
-        
-        # ===== YANGI QO'SHIMCHA: 30 daqiqa kutish vaqti =====
-        db.set_user_wait(user_id, minutes=30)
+        await message.answer(wrong_messages.get(lang, wrong_messages['UZ']))
         
         wait_messages = {
             'UZ': "⏳ Hurmatli foydalanuvchi!\n\nSiz xato javob berganingiz uchun keyingi savol 30 daqiqadan so'ng ochiladi.\nIltimos, sabr qiling! 🤲",
@@ -1352,10 +1352,7 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
             'EN': "⏳ Dear user!\n\nDue to your wrong answer, the next question will be available in 30 minutes.\nPlease be patient! 🤲"
         }
         
-        await callback.message.answer(
-            wait_messages.get(lang, wait_messages['UZ'])
-        )
-        # ===== TUGADI =====
+        await message.answer(wait_messages.get(lang, wait_messages['UZ']))
         
         # Admin ga xabar
         user_name = user_sessions[user_id].get('name', 'Noma\'lum')
@@ -1366,7 +1363,7 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
                     f"📊 **Javob**\n\n"
                     f"👤 Foydalanuvchi: {user_name}\n"
                     f"🆔 ID: `{user_id}`\n"
-                    f"📝 Javob: ❌ Noto'g'ri\n"
+                    f"📝 Javob: ❌ Noto'g'ri (matn)\n"
                     f"❓ Savol ID: {question_id}\n"
                     f"⏳ 30 daqiqa kutish vaqti o'rnatildi"
                 )
@@ -1375,20 +1372,7 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
         
         # Ko'rilgan savollar ro'yxatini tozalash
         user_sessions[user_id]['seen_questions'] = []
-        
-        restart_messages = {
-            'UZ': "⚠️ 20 ta savol imkoniyati tugadi. 30 daqiqadan so'ng qayta urinib ko'ring.",
-            'RU': "⚠️ Возможность 20 вопросов закончилась. Попробуйте снова через 30 минут.",
-            'AR': "⚠️ انتهت فرصة 20 سؤال. حاول مرة أخرى بعد 30 دقيقة.",
-            'EN': "⚠️ 20 questions chance ended. Try again in 30 minutes."
-        }
-        
-        await callback.message.answer(
-            restart_messages.get(lang, restart_messages['UZ']),
-            reply_markup=get_main_menu_keyboard(lang)
-        )
-    
-    await callback.answer()
+        user_sessions[user_id].pop('current_question', None)
 
 # Yangi savol
 @dp.callback_query(F.data == "new_question")
