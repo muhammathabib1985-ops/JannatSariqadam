@@ -153,7 +153,7 @@ async def process_correct(message: Message, state: FSMContext):
     await message.answer(preview, reply_markup=keyboard)
     await state.set_state(AddQuestion.waiting_for_confirmation)
 
-@router.callback_query(F.data == "admin_confirm_save")
+@dp.callback_query(F.data == "admin_confirm_save")
 async def confirm_save(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         await callback.answer("Siz admin emassiz!")
@@ -164,46 +164,95 @@ async def confirm_save(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     
     try:
-        # Tarjima qilish
-        question_ru = (await translator.translate(data['question_uz'], dest='ru')).text
-        question_ar = (await translator.translate(data['question_uz'], dest='ar')).text
-        question_en = (await translator.translate(data['question_uz'], dest='en')).text
+        print("=" * 50)
+        print("🔤 TARJIMA JARAYONI BOSHLANDI")
+        print("=" * 50)
         
-        option1_ru = (await translator.translate(data['option1_uz'], dest='ru')).text
-        option1_ar = (await translator.translate(data['option1_uz'], dest='ar')).text
-        option1_en = (await translator.translate(data['option1_uz'], dest='en')).text
+        # Asl matnlar
+        question_uz = data['question_uz']
+        option1_uz = data['option1_uz']
+        option2_uz = data['option2_uz']
+        option3_uz = data['option3_uz']
         
-        option2_ru = (await translator.translate(data['option2_uz'], dest='ru')).text
-        option2_ar = (await translator.translate(data['option2_uz'], dest='ar')).text
-        option2_en = (await translator.translate(data['option2_uz'], dest='en')).text
+        print(f"📝 Asl matn (O'zbek): {question_uz}")
         
-        option3_ru = (await translator.translate(data['option3_uz'], dest='ru')).text
-        option3_ar = (await translator.translate(data['option3_uz'], dest='ar')).text
-        option3_en = (await translator.translate(data['option3_uz'], dest='en')).text
+        # Tarjima qilish (sinxron)
+        from googletrans import Translator
+        translator = Translator()
+        
+        # Rus tiliga tarjima
+        question_ru = translator.translate(question_uz, dest='ru').text
+        option1_ru = translator.translate(option1_uz, dest='ru').text
+        option2_ru = translator.translate(option2_uz, dest='ru').text
+        option3_ru = translator.translate(option3_uz, dest='ru').text
+        
+        # Arab tiliga tarjima
+        question_ar = translator.translate(question_uz, dest='ar').text
+        option1_ar = translator.translate(option1_uz, dest='ar').text
+        option2_ar = translator.translate(option2_uz, dest='ar').text
+        option3_ar = translator.translate(option3_uz, dest='ar').text
+        
+        # Ingliz tiliga tarjima
+        question_en = translator.translate(question_uz, dest='en').text
+        option1_en = translator.translate(option1_uz, dest='en').text
+        option2_en = translator.translate(option2_uz, dest='en').text
+        option3_en = translator.translate(option3_uz, dest='en').text
+        
+        # TARJIMA NATIJALARINI TEKSHIRISH
+        print(f"🇸🇦 Arabcha tarjima: {question_ar}")
+        print(f"🇷🇺 Ruscha tarjima: {question_ru}")
+        print(f"🇬🇧 Inglizcha tarjima: {question_en}")
         
         # Database ga saqlash
+        from database import Database
+        db = Database()
+        
         question_data = (
-            data['question_uz'], question_ru, question_ar, question_en,
-            data['option1_uz'], option1_ru, option1_ar, option1_en,
-            data['option2_uz'], option2_ru, option2_ar, option2_en,
-            data['option3_uz'], option3_ru, option3_ar, option3_en,
+            question_uz, question_ru, question_ar, question_en,
+            option1_uz, option1_ru, option1_ar, option1_en,
+            option2_uz, option2_ru, option2_ar, option2_en,
+            option3_uz, option3_ru, option3_ar, option3_en,
             data['correct'], datetime.now(), callback.from_user.id
         )
         
-        question_id = db.add_question(question_data)
+        print("✅ Ma'lumotlar bazaga saqlanmoqda...")
+        
+        # add_question metodini chaqirish
+        cursor = db.conn.cursor()
+        query = '''
+            INSERT INTO questions (
+                question_uz, question_ru, question_ar, question_en,
+                option1_uz, option1_ru, option1_ar, option1_en,
+                option2_uz, option2_ru, option2_ar, option2_en,
+                option3_uz, option3_ru, option3_ar, option3_en,
+                correct_option, created_at, created_by, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        '''
+        cursor.execute(query, question_data)
+        db.conn.commit()
+        question_id = cursor.lastrowid
         
         if question_id:
-            await callback.message.edit_text(f"✅ Savol muvaffaqiyatli qo'shildi! (ID: {question_id})")
-            # Admin menyusiga qaytish
-            await callback.message.answer(
-                "Admin panel:",
-                reply_markup=get_admin_keyboard('UZ')
+            # Tarjimalarni ko'rsatish
+            preview = (
+                f"✅ Savol muvaffaqiyatli qo'shildi! (ID: {question_id})\n\n"
+                f"🇺🇿 O'zbek: {question_uz}\n"
+                f"🇷🇺 Rus: {question_ru}\n"
+                f"🇸🇦 Arab: {question_ar}\n"
+                f"🇬🇧 Ingliz: {question_en}\n\n"
+                f"1️⃣ {option1_uz} | {option1_ru} | {option1_ar} | {option1_en}\n"
+                f"2️⃣ {option2_uz} | {option2_ru} | {option2_ar} | {option2_en}\n"
+                f"3️⃣ {option3_uz} | {option3_ru} | {option3_ar} | {option3_en}\n"
             )
+            
+            await callback.message.edit_text(preview)
         else:
             await callback.message.edit_text("❌ Saqlashda xatolik yuz berdi!")
         
     except Exception as e:
-        logger.error(f"Error saving question: {e}")
+        print(f"❌ Xatolik: {e}")
+        import traceback
+        traceback.print_exc()
         await callback.message.edit_text(f"❌ Xatolik: {str(e)}")
     
     await state.clear()
