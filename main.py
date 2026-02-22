@@ -1150,9 +1150,37 @@ async def questions_handler(message: Message):
 @dp.message()
 async def handle_text_answer(message: Message, state: FSMContext):
     user_id = message.from_user.id
+    text = message.text
     
     if is_admin(user_id):
         return
+    
+    # ===== MUHIM: MENYU TUGMALARINI TEKSHIRISH =====
+    menu_buttons = [
+        "❓ Savollar", "❓ Вопросы", "❓ أسئلة", "❓ Questions",
+        "👤 Payg'ambarlar hayoti", "👤 Жизнь пророков", "👤 حياة الأنبياء", "👤 Prophets life",
+        "🤲 Allohning 99 ismi", "🤲 99 имен Аллаха", "🤲 أسماء الله الحسنى", "🤲 99 Names of Allah",
+        "📿 Kundalik zikrlar", "📿 Ежедневные зикры", "📿 أذكار اليومية", "📿 Daily dhikr",
+        "🌐 Tilni o'zgartirish", "🌐 Сменить язык", "🌐 تغيير اللغة", "🌐 Change language",
+        "🔄 Yangi savol", "🔄 Новый вопрос", "🔄 سؤال جديد", "🔄 New question"
+    ]
+    
+    if text in menu_buttons:
+        # Menyu tugmasi bosilgan - tegishli handlerga o'tkazish
+        if text in ["🤲 Allohning 99 ismi", "🤲 99 имен Аллаха", "🤲 أسماء الله الحسنى", "🤲 99 Names of Allah"]:
+            await allah_names_handler(message)
+        elif text in ["❓ Savollar", "❓ Вопросы", "❓ أسئلة", "❓ Questions"]:
+            await questions_handler(message)
+        elif text in ["👤 Payg'ambarlar hayoti", "👤 Жизнь пророков", "👤 حياة الأنبياء", "👤 Prophets life"]:
+            await prophets_handler(message)
+        elif text in ["📿 Kundalik zikrlar", "📿 Ежедневные зикры", "📿 أذكار اليومية", "📿 Daily dhikr"]:
+            await zikr_handler(message)
+        elif text in ["🌐 Tilni o'zgartirish", "🌐 Сменить язык", "🌐 تغيير اللغة", "🌐 Change language"]:
+            await change_lang_handler(message)
+        elif text in ["🔄 Yangi savol", "🔄 Новый вопрос", "🔄 سؤال جديد", "🔄 New question"]:
+            await new_question_handler(message)
+        return
+    # ===== MENYU TUGMALARI TEKSHIRISH TUGADI =====
     
     # Agar foydalanuvchi registratsiya jarayonida bo'lsa
     current_state = await state.get_state()
@@ -1163,7 +1191,13 @@ async def handle_text_answer(message: Message, state: FSMContext):
     if user_id not in user_sessions or 'current_question' not in user_sessions[user_id]:
         # Agar joriy savol bo'lmasa, oddiy xabar
         lang = user_sessions.get(user_id, {}).get('lang', 'UZ')
-        await message.answer("Iltimos, avval '❓ Savollar' tugmasini bosing.")
+        info_messages = {
+            'UZ': "Iltimos, avval '❓ Savollar' tugmasini bosing.",
+            'RU': "Пожалуйста, сначала нажмите '❓ Вопросы'.",
+            'AR': "يرجى الضغط أولاً على '❓ أسئلة'.",
+            'EN': "Please press '❓ Questions' first."
+        }
+        await message.answer(info_messages.get(lang, info_messages['UZ']))
         return
     
     # Kutish vaqtini tekshirish
@@ -1194,7 +1228,7 @@ async def handle_text_answer(message: Message, state: FSMContext):
     is_correct = (user_answer == correct_text)
     
     # Javobni bazaga saqlash
-    db.save_answer(user_id, question_id, 0, is_correct)  # selected_option=0 (matnli javob)
+    db.save_answer(user_id, question_id, 0, is_correct)
     db.update_user_stats(user_id, is_correct)
     
     # 20 ta savol sessiyasini tekshirish
@@ -1308,8 +1342,14 @@ async def handle_text_answer(message: Message, state: FSMContext):
                     f"✅ To'g'ri javoblar: {correct_count}/20\n"
                     f"⏳ Qolgan: {remaining} ta\n"
                     f"💰 Mukofot: 200 000 so'm\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                    f"📝 **Javobingizni yozib yuboring:**"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                )
+            else:
+                reward_text = (
+                    f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🎁 **20 TA SAVOLGA TO'G'RI JAVOB BERIB**\n"
+                    f"💰 **200 000 SO'M YUTIB OLING!**\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
                 )
             
             question_prefix = {
@@ -1320,7 +1360,7 @@ async def handle_text_answer(message: Message, state: FSMContext):
             }
             
             await message.answer(
-                f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}{reward_text}"
+                f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}{reward_text}\n\n📝 **Javobingizni yozib yuboring:**"
             )
         else:
             all_done_messages = {
