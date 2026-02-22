@@ -1112,60 +1112,43 @@ async def questions_handler(message: Message):
         'source': 'questions'
     }
     
-    # ===== MUKOFOT MATNI (TO'LIQ TARJIMA) =====
+    # ===== MUKOFOT MATNI (TO'LIQ TARJIMA QILINGAN) =====
     active_session = db.get_active_session(user_id)
     
-    # Mukofot sarlavhasi
-    reward_title = {
-        'UZ': "🎁 **MUKOFOT DASTURI**",
-        'RU': "🎁 **ПРОГРАММА ВОЗНАГРАЖДЕНИЯ**",
-        'AR': "🎁 **برنامج المكافآت**",
-        'EN': "🎁 **REWARD PROGRAM**"
-    }
-    
-    # Mukofot boshlang'ich matni
-    reward_start = {
-        'UZ': "🎁 **20 TA SAVOLGA TO'G'RI JAVOB BERIB**",
-        'RU': "🎁 **ОТВЕТЬТЕ ПРАВИЛЬНО НА 20 ВОПРОСОВ**",
-        'AR': "🎁 **أجب على 20 سؤالاً بشكل صحيح**",
-        'EN': "🎁 **ANSWER 20 QUESTIONS CORRECTLY**"
-    }
-    
-    # Mukofot puli matni
-    reward_money = {
-        'UZ': "💰 **200 000 SO'M YUTIB OLING!**",
-        'RU': "💰 **ВЫИГРАЙТЕ 200 000 СУМ!**",
-        'AR': "💰 **اربح 200 000 سوم!**",
-        'EN': "💰 **WIN 200 000 UZS!**"
-    }
-    
-    # To'g'ri javoblar matni
-    correct_label = {
-        'UZ': "✅ To'g'ri javoblar",
-        'RU': "✅ Правильных ответов",
-        'AR': "✅ الإجابات الصحيحة",
-        'EN': "✅ Correct answers"
-    }
-    
-    # Qolgan savollar matni
-    remaining_label = {
-        'UZ': "⏳ Qolgan",
-        'RU': "⏳ Осталось",
-        'AR': "⏳ المتبقي",
-        'EN': "⏳ Remaining"
-    }
-    
-    # Mukofot puli label
-    prize_label = {
-        'UZ': "💰 Mukofot",
-        'RU': "💰 Приз",
-        'AR': "💰 الجائزة",
-        'EN': "💰 Prize"
-    }
-    
+    # TILGA MOS MATNLAR
     if active_session:
         correct_count = active_session[1]
         remaining_q = 20 - correct_count
+        
+        # Aktiv sessiya uchun matnlar
+        reward_title = {
+            'UZ': "🎁 **MUKOFOT DASTURI**",
+            'RU': "🎁 **ПРОГРАММА ВОЗНАГРАЖДЕНИЯ**",
+            'AR': "🎁 **برنامج المكافآت**",
+            'EN': "🎁 **REWARD PROGRAM**"
+        }
+        
+        correct_label = {
+            'UZ': "✅ To'g'ri javoblar",
+            'RU': "✅ Правильных ответов",
+            'AR': "✅ الإجابات الصحيحة",
+            'EN': "✅ Correct answers"
+        }
+        
+        remaining_label = {
+            'UZ': "⏳ Qolgan",
+            'RU': "⏳ Осталось",
+            'AR': "⏳ المتبقي",
+            'EN': "⏳ Remaining"
+        }
+        
+        prize_label = {
+            'UZ': "💰 Mukofot",
+            'RU': "💰 Приз",
+            'AR': "💰 الجائزة",
+            'EN': "💰 Prize"
+        }
+        
         reward_text = (
             f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
             f"{reward_title.get(lang, reward_title['UZ'])}\n"
@@ -1175,6 +1158,21 @@ async def questions_handler(message: Message):
             f"━━━━━━━━━━━━━━━━━━━━\n"
         )
     else:
+        # Yangi sessiya uchun matnlar
+        reward_start = {
+            'UZ': "🎁 **20 TA SAVOLGA TO'G'RI JAVOB BERIB**",
+            'RU': "🎁 **ОТВЕТЬТЕ ПРАВИЛЬНО НА 20 ВОПРОСОВ**",
+            'AR': "🎁 **أجب على 20 سؤالاً بشكل صحيح**",
+            'EN': "🎁 **ANSWER 20 QUESTIONS CORRECTLY**"
+        }
+        
+        reward_money = {
+            'UZ': "💰 **200 000 SO'M YUTIB OLING!**",
+            'RU': "💰 **ВЫИГРАЙТЕ 200 000 СУМ!**",
+            'AR': "💰 **اربح 200 000 سوم!**",
+            'EN': "💰 **WIN 200 000 UZS!**"
+        }
+        
         reward_text = (
             f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
             f"{reward_start.get(lang, reward_start['UZ'])}\n"
@@ -1211,7 +1209,6 @@ async def questions_handler(message: Message):
     print(f"📤 Mukofot matni: {reward_text[:50]}...")
     
     await message.answer(final_message)
-    
 @dp.message()
 async def handle_text_answer(message: Message, state: FSMContext):
     user_id = message.from_user.id
