@@ -1106,11 +1106,11 @@ async def questions_handler(message: Message):
     user_sessions[user_id]['current_question'] = {
         'id': q_id,
         'correct': correct,
-        'correct_text': correct_answer_text.lower().strip(),  # Kichik harf va probellarni tozalab
+        'correct_text': correct_answer_text.lower().strip(),
         'options': [opt1, opt2, opt3]
     }
     
-    # Mukofot matni
+    # ===== MUKOFOT MATNI (SAQLANADI) =====
     active_session = db.get_active_session(user_id)
     reward_text = ""
     
@@ -1123,9 +1123,17 @@ async def questions_handler(message: Message):
             f"✅ To'g'ri javoblar: {correct_count}/20\n"
             f"⏳ Qolgan: {remaining_q} ta\n"
             f"💰 Mukofot: 200 000 so'm\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"📝 **Javobingizni yozib yuboring:**"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
         )
+    else:
+        # Agar sessiya bo'lmasa, mukofot haqida ma'lumot
+        reward_text = (
+            f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
+            f"🎁 **20 TA SAVOLGA TO'G'RI JAVOB BERIB**\n"
+            f"💰 **200 000 SO'M YUTIB OLING!**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+        )
+    # ===== MUKOFOT MATNI TUGADI =====
     
     question_prefix = {
         'UZ': "❓ Savol",
@@ -1134,9 +1142,9 @@ async def questions_handler(message: Message):
         'EN': "❓ Question"
     }
     
-    # FAQAT SAVOL MATNI - VARIANTLARSIZ
+    # SAVOL MATNI + MUKOFOT MATNI + YO'LLANMA
     await message.answer(
-        f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}{reward_text}"
+        f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}{reward_text}\n\n📝 **Javobingizni yozib yuboring:**"
     )
 
 @dp.message()
