@@ -1055,32 +1055,31 @@ async def questions_handler(message: Message):
             'new_questions_seen': []
         }
         print(f"🆕 Yangi session: {user_id}, til: {lang}")
-    
-    # Foydalanuvchi tilini olish (bazadan va sessiyadan)
-    db_lang = db.get_user_language(user_id)
-    session_lang = user_sessions[user_id].get('lang', 'UZ')
-    
-    # Agar tillar farq qilsa, sessiyani yangilash
-    if db_lang != session_lang:
-        print(f"🔄 Til yangilandi: session={session_lang} -> baza={db_lang}")
-        user_sessions[user_id]['lang'] = db_lang
-        lang = db_lang
     else:
-        lang = session_lang
+        lang = user_sessions[user_id].get('lang', 'UZ')
+    
+    # Tilni bazadan tekshirish
+    db_lang = db.get_user_language(user_id)
+    if db_lang != lang:
+        print(f"🔄 Til yangilandi: {lang} -> {db_lang}")
+        lang = db_lang
+        user_sessions[user_id]['lang'] = lang
+    
+    print(f"🌐 Foydalanuvchi tili: {lang}")
     
     if 'questions_seen' not in user_sessions[user_id]:
         user_sessions[user_id]['questions_seen'] = []
     
     seen_questions = user_sessions[user_id]['questions_seen']
     
-    print(f"🔍 Foydalanuvchi tili: {lang}")
-    print(f"👁️ Ko'rilgan savollar: {len(seen_questions)} ta")
-    
-    # Foydalanuvchi ko'rmagan savolni olish (TILGA MOS)
+    # Savol olish
     question = db.get_random_question_excluding(lang, seen_questions)
     
+    if not question and lang != 'UZ':
+        print(f"⚠️ {lang} tilida savol topilmadi, UZ ga o'tish")
+        question = db.get_random_question_excluding('UZ', seen_questions)
+    
     if not question:
-        print("❌ Hech qanday faol savol topilmadi!")
         if len(seen_questions) >= db.get_question_count():
             user_sessions[user_id]['questions_seen'] = []
             question = db.get_random_question_excluding(lang, [])
@@ -1096,21 +1095,14 @@ async def questions_handler(message: Message):
             return
     
     q_id, q_text, opt1, opt2, opt3, correct = question
-    print(f"📝 Savol matni ({lang}): {q_text[:50]}...")
+    print(f"📝 Savol: {q_text[:50]}...")
     
     # Savolni ko'rilganlar ro'yxatiga qo'shish
     if q_id not in seen_questions:
         user_sessions[user_id]['questions_seen'].append(q_id)
-        print(f"➕ Savol ID {q_id} ko'rilganlar ro'yxatiga qo'shildi")
     
     # To'g'ri javob matnini olish
-    correct_answer_text = ""
-    if correct == 1:
-        correct_answer_text = opt1
-    elif correct == 2:
-        correct_answer_text = opt2
-    else:
-        correct_answer_text = opt3
+    correct_answer_text = [opt1, opt2, opt3][correct-1]
     
     user_sessions[user_id]['current_question'] = {
         'id': q_id,
@@ -1120,29 +1112,78 @@ async def questions_handler(message: Message):
         'source': 'questions'
     }
     
-    # Mukofot matni
+    # ===== MUKOFOT MATNI (TO'LIQ TARJIMA) =====
     active_session = db.get_active_session(user_id)
-    reward_text = ""
+    
+    # Mukofot sarlavhasi
+    reward_title = {
+        'UZ': "🎁 **MUKOFOT DASTURI**",
+        'RU': "🎁 **ПРОГРАММА ВОЗНАГРАЖДЕНИЯ**",
+        'AR': "🎁 **برنامج المكافآت**",
+        'EN': "🎁 **REWARD PROGRAM**"
+    }
+    
+    # Mukofot boshlang'ich matni
+    reward_start = {
+        'UZ': "🎁 **20 TA SAVOLGA TO'G'RI JAVOB BERIB**",
+        'RU': "🎁 **ОТВЕТЬТЕ ПРАВИЛЬНО НА 20 ВОПРОСОВ**",
+        'AR': "🎁 **أجب على 20 سؤالاً بشكل صحيح**",
+        'EN': "🎁 **ANSWER 20 QUESTIONS CORRECTLY**"
+    }
+    
+    # Mukofot puli matni
+    reward_money = {
+        'UZ': "💰 **200 000 SO'M YUTIB OLING!**",
+        'RU': "💰 **ВЫИГРАЙТЕ 200 000 СУМ!**",
+        'AR': "💰 **اربح 200 000 سوم!**",
+        'EN': "💰 **WIN 200 000 UZS!**"
+    }
+    
+    # To'g'ri javoblar matni
+    correct_label = {
+        'UZ': "✅ To'g'ri javoblar",
+        'RU': "✅ Правильных ответов",
+        'AR': "✅ الإجابات الصحيحة",
+        'EN': "✅ Correct answers"
+    }
+    
+    # Qolgan savollar matni
+    remaining_label = {
+        'UZ': "⏳ Qolgan",
+        'RU': "⏳ Осталось",
+        'AR': "⏳ المتبقي",
+        'EN': "⏳ Remaining"
+    }
+    
+    # Mukofot puli label
+    prize_label = {
+        'UZ': "💰 Mukofot",
+        'RU': "💰 Приз",
+        'AR': "💰 الجائزة",
+        'EN': "💰 Prize"
+    }
     
     if active_session:
         correct_count = active_session[1]
         remaining_q = 20 - correct_count
         reward_text = (
             f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
-            f"🎁 **MUKOFOT DASTURI**\n"
-            f"✅ To'g'ri javoblar: {correct_count}/20\n"
-            f"⏳ Qolgan: {remaining_q} ta\n"
-            f"💰 Mukofot: 200 000 so'm\n"
+            f"{reward_title.get(lang, reward_title['UZ'])}\n"
+            f"{correct_label.get(lang, correct_label['UZ'])}: {correct_count}/20\n"
+            f"{remaining_label.get(lang, remaining_label['UZ'])}: {remaining_q} ta\n"
+            f"{prize_label.get(lang, prize_label['UZ'])}: 200 000 so'm\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
         )
     else:
         reward_text = (
             f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
-            f"🎁 **20 TA SAVOLGA TO'G'RI JAVOB BERIB**\n"
-            f"💰 **200 000 SO'M YUTIB OLING!**\n"
+            f"{reward_start.get(lang, reward_start['UZ'])}\n"
+            f"{reward_money.get(lang, reward_money['UZ'])}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
         )
+    # ===== MUKOFOT MATNI TUGADI =====
     
+    # Savol prefiksi
     question_prefix = {
         'UZ': "❓ Savol",
         'RU': "❓ Вопрос",
@@ -1150,9 +1191,26 @@ async def questions_handler(message: Message):
         'EN': "❓ Question"
     }
     
-    await message.answer(
-        f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}{reward_text}\n\n📝 **Javobingizni yozib yuboring:**"
+    # Javob yozish uchun yo'llanma
+    answer_prompt = {
+        'UZ': "\n\n📝 **Javobingizni yozib yuboring:**",
+        'RU': "\n\n📝 **Напишите ваш ответ:**",
+        'AR': "\n\n📝 **اكتب إجابتك:**",
+        'EN': "\n\n📝 **Write your answer:**"
+    }
+    
+    # Yakuniy xabar
+    final_message = (
+        f"{question_prefix.get(lang, '❓ Savol')}:\n\n"
+        f"{q_text}"
+        f"{reward_text}"
+        f"{answer_prompt.get(lang, answer_prompt['UZ'])}"
     )
+    
+    print(f"📤 Yuborilayotgan til: {lang}")
+    print(f"📤 Mukofot matni: {reward_text[:50]}...")
+    
+    await message.answer(final_message)
     
 @dp.message()
 async def handle_text_answer(message: Message, state: FSMContext):
