@@ -1209,6 +1209,7 @@ async def questions_handler(message: Message):
     print(f"📤 Mukofot matni: {reward_text[:50]}...")
     
     await message.answer(final_message)
+    
 @dp.message()
 async def handle_text_answer(message: Message, state: FSMContext):
     user_id = message.from_user.id
@@ -1368,19 +1369,157 @@ async def handle_text_answer(message: Message, state: FSMContext):
             db.save_question_answer(user_id, session_id, question_id, 0, True)
             active_session = db.get_active_session(user_id)
         
-        # 20 ta savolga yetdimi?
+        # ===== 20 TA SAVOLGA YETDIMI? (ANIMATSIYA QO'SHILDI) =====
         if active_session and active_session[1] >= 20:
             db.complete_session(session_id, user_id, success=True)
             reward_id = db.create_reward(user_id, session_id)
             
-            congrats_msg = {
-                'UZ': "🎉 **TABRIKLAYMIZ!** 🎉\n\nSiz 20 ta savolga to'g'ri javob berdingiz!\n\n✅ Barcha savollar to'g'ri\n💰 Mukofot: 200 000 so'm\n\n━━━━━━━━━━━━━━━━━━━━\n💳 **Iltimos, karta raqamingizni kiriting:**\nMisol: `8600 1234 5678 9012`",
-                'RU': "🎉 **ПОЗДРАВЛЯЕМ!** 🎉\n\nВы правильно ответили на 20 вопросов!\n\n✅ Все ответы верны\n💰 Приз: 200 000 сум\n\n━━━━━━━━━━━━━━━━━━━━\n💳 **Пожалуйста, введите номер карты:**\nПример: `8600 1234 5678 9012`",
-                'AR': "🎉 **تهانينا!** 🎉\n\nلقد أجبت على 20 سؤالاً بشكل صحيح!\n\n✅ جميع الإجابات صحيحة\n💰 الجائزة: 200 000 سوم\n\n━━━━━━━━━━━━━━━━━━━━\n💳 **يرجى إدخال رقم البطاقة:**\nمثال: `8600 1234 5678 9012`",
-                'EN': "🎉 **CONGRATULATIONS!** 🎉\n\nYou answered 20 questions correctly!\n\n✅ All answers correct\n💰 Prize: 200 000 UZS\n\n━━━━━━━━━━━━━━━━━━━━\n💳 **Please enter your card number:**\nExample: `8600 1234 5678 9012`"
+            # ===== ANIMATSIYA VA SOVG'A QUTISI =====
+            
+            # 1. SALYUTLAR (5 sekundlik animatsiya)
+            fireworks = [
+                "🎆✨🌟🎇⭐💫",
+                "🌟✨🎆💫⭐🎇",
+                "✨🌟🎇💫🎆⭐",
+                "💫🎆🌟✨⭐🎇",
+                "⭐🎇✨🌟💫🎆",
+                "🎆✨🌟⭐💫🎇",
+                "🌟🎆✨💫⭐🎇",
+                "✨💫🎆🌟⭐🎇"
+            ]
+            
+            fireworks_msg = {
+                'UZ': "🎆 **SALYUTLAR!** 🎆",
+                'RU': "🎆 **ФЕЙЕРВЕРК!** 🎆",
+                'AR': "🎆 **الألعاب النارية!** 🎆",
+                'EN': "🎆 **FIREWORKS!** 🎆"
             }
             
-            await message.answer(congrats_msg.get(lang, congrats_msg['UZ']))
+            await message.answer(fireworks_msg.get(lang, fireworks_msg['UZ']))
+            await asyncio.sleep(0.5)
+            
+            for i in range(10):  # 10 marta salyut (5 sekund)
+                await message.answer(f"**{fireworks[i % len(fireworks)]}**")
+                await asyncio.sleep(0.5)
+            
+            # 2. BARABAN (DRUM ROLL)
+            drum_msg = {
+                'UZ': "🥁 **BARABAN SADOLARI** 🥁",
+                'RU': "🥁 **БАРАБАННАЯ ДРОБЬ** 🥁",
+                'AR': "🥁 **قرع الطبول** 🥁",
+                'EN': "🥁 **DRUM ROLL** 🥁"
+            }
+            
+            await message.answer(drum_msg.get(lang, drum_msg['UZ']))
+            await asyncio.sleep(1)
+            
+            # 3. SOVG'A QUTISI (ASCII ART)
+            gift_box_uz = """
+╔══════════════════════════════════════╗
+║           🎁 SOVG'A QUTISI 🎁        ║
+╠══════════════════════════════════════╣
+║                                      ║
+║         🎉 TABRIKLAYMIZ! 🎉          ║
+║                                      ║
+║    Siz 20 ta savolga to'g'ri         ║
+║    javob berib, 200 000 so'm         ║
+║    mukofotni yutib oldingiz!         ║
+║                                      ║
+║       💰 **200 000 SO'M** 💰         ║
+║                                      ║
+║    Ilmingiz ziyoda bo'lsin!          ║
+║    Allohning O'zi madadkor bo'lsin!  ║
+║                                      ║
+╚══════════════════════════════════════╝
+"""
+            
+            gift_box_ru = """
+╔══════════════════════════════════════╗
+║           🎁 КОРОБКА ПОДАРКА 🎁      ║
+╠══════════════════════════════════════╣
+║                                      ║
+║         🎉 ПОЗДРАВЛЯЕМ! 🎉           ║
+║                                      ║
+║    Вы правильно ответили на 20       ║
+║    вопросов и выиграли приз          ║
+║    200 000 сум!                      ║
+║                                      ║
+║       💰 **200 000 СУМ** 💰          ║
+║                                      ║
+║    Пусть ваши знания умножаются!     ║
+║    Да поможет вам Аллах!             ║
+║                                      ║
+╚══════════════════════════════════════╝
+"""
+            
+            gift_box_ar = """
+╔══════════════════════════════════════╗
+║         🎁 صندوق الهدايا 🎁          ║
+╠══════════════════════════════════════╣
+║                                      ║
+║         🎉 تهانينا! 🎉               ║
+║                                      ║
+║    لقد أجبت على 20 سؤالاً            ║
+║    بشكل صحيح وفزت بجائزة             ║
+║    200 000 سوم!                      ║
+║                                      ║
+║       💰 **200 000 سوم** 💰          ║
+║                                      ║
+║    زادكم الله علماً                   ║
+║    والله ولي التوفيق                  ║
+║                                      ║
+╚══════════════════════════════════════╝
+"""
+            
+            gift_box_en = """
+╔══════════════════════════════════════╗
+║           🎁 GIFT BOX 🎁             ║
+╠══════════════════════════════════════╣
+║                                      ║
+║         🎉 CONGRATULATIONS! 🎉       ║
+║                                      ║
+║    You answered 20 questions         ║
+║    correctly and won a prize         ║
+║    200 000 UZS!                      ║
+║                                      ║
+║       💰 **200 000 UZS** 💰          ║
+║                                      ║
+║    May your knowledge increase!      ║
+║    May Allah be your helper!         ║
+║                                      ║
+╚══════════════════════════════════════╝
+"""
+            
+            gift_boxes = {
+                'UZ': gift_box_uz,
+                'RU': gift_box_ru,
+                'AR': gift_box_ar,
+                'EN': gift_box_en
+            }
+            
+            await message.answer(gift_boxes.get(lang, gift_boxes['UZ']))
+            await asyncio.sleep(1)
+            
+            # 4. KONFETTI VA BALONLAR
+            confetti = {
+                'UZ': "🎊 🎈 🎉 ✨ 🎊 🎈 🎉 ✨",
+                'RU': "🎊 🎈 🎉 ✨ 🎊 🎈 🎉 ✨",
+                'AR': "🎊 🎈 🎉 ✨ 🎊 🎈 🎉 ✨",
+                'EN': "🎊 🎈 🎉 ✨ 🎊 🎈 🎉 ✨"
+            }
+            
+            await message.answer(confetti.get(lang, confetti['UZ']))
+            await asyncio.sleep(0.5)
+            
+            # 5. KARTA RAQAMINI SO'RASH
+            card_request = {
+                'UZ': "💳 **Iltimos, karta raqamingizni kiriting:**\nMisol: `8600 1234 5678 9012`",
+                'RU': "💳 **Пожалуйста, введите номер карты:**\nПример: `8600 1234 5678 9012`",
+                'AR': "💳 **يرجى إدخال رقم البطاقة:**\nمثال: `8600 1234 5678 9012`",
+                'EN': "💳 **Please enter your card number:**\nExample: `8600 1234 5678 9012`"
+            }
+            
+            await message.answer(card_request.get(lang, card_request['UZ']))
             await state.set_state(RewardState.waiting_for_card)
             return
         
@@ -1438,9 +1577,6 @@ async def handle_text_answer(message: Message, state: FSMContext):
         
         if new_question:
             q_id, q_text, opt1, opt2, opt3, correct = new_question
-            
-            # Savol matni va variantlar tilga mos kelishiga ishonch hosil qilish
-            # (get_random_question_excluding allaqachon tilga mos qaytaradi)
             
             # Yangi savolni ko'rilganlar ro'yxatiga qo'shish
             if q_id not in seen_questions:
