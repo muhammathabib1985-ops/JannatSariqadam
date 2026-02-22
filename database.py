@@ -303,8 +303,7 @@ class Database:
             if lang not in ['UZ', 'RU', 'AR', 'EN']:
                 lang = 'UZ'
             
-            # MUHIM: excluded_ids list ekanligiga ishonch hosil qiling
-            print(f"🔍 Excluded IDs: {excluded_ids}")
+            print(f"🔍 get_random_question_excluding: lang={lang}, excluded_ids={excluded_ids}")
             
             if excluded_ids and len(excluded_ids) > 0:
                 placeholders = ','.join(['?'] * len(excluded_ids))
@@ -333,11 +332,14 @@ class Database:
             
             result = self.cursor.fetchone()
             
-            # Agar natija bo'lmasa va excluded_ids bor bo'lsa, boshqa tilda qidirish
-            if not result and excluded_ids and lang != 'UZ':
-                return self.get_random_question('UZ')
+            if result:
+                print(f"✅ Topildi: ID={result[0]}, savol={result[1][:30]}...")
+            else:
+                print(f"❌ {lang} tilida savol topilmadi, UZ ga o'tiladi")
+                # Agar tanlangan tilda savol bo'lmasa, o'zbekchasini olish
+                if lang != 'UZ':
+                    return self.get_random_question_excluding('UZ', excluded_ids)
             
-            print(f"✅ Tanlangan savol ID: {result[0] if result else 'None'}")
             return result
             
         except Exception as e:

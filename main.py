@@ -1153,6 +1153,7 @@ async def questions_handler(message: Message):
     await message.answer(
         f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}{reward_text}\n\n📝 **Javobingizni yozib yuboring:**"
     )
+    
 @dp.message()
 async def handle_text_answer(message: Message, state: FSMContext):
     user_id = message.from_user.id
