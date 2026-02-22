@@ -1218,14 +1218,57 @@ async def handle_text_answer(message: Message, state: FSMContext):
     # Joriy savol ma'lumotlarini olish
     current_q = user_sessions[user_id]['current_question']
     question_id = current_q['id']
-    correct_text = current_q['correct_text']
+    correct_text = current_q['correct_text']  # Masalan: "2 Odam Aleyhissalom"
     correct = current_q['correct']
     
     # Foydalanuvchi javobini tozalash
     user_answer = message.text.lower().strip()
     
-    # Javobni tekshirish
-    is_correct = (user_answer == correct_text)
+    # ===== YAXSHILANGAN JAVOB TEKSHIRISH =====
+    import re
+    
+    # 1. To'g'ri javob matnidan raqam va nuqtalarni olib tashlash
+    # Misol: "2 Odam Aleyhissalom" -> "odam aleyhissalom"
+    correct_text_clean = re.sub(r'^[\d\s.)]+', '', correct_text).lower().strip()
+    
+    # 2. Raqam va belgilardan keyingi qismni olish
+    parts = correct_text.split()
+    if len(parts) > 1 and parts[0].strip().replace('.', '').isdigit():
+        correct_text_without_number = ' '.join(parts[1:]).lower().strip()
+    else:
+        correct_text_without_number = correct_text.lower().strip()
+    
+    # 3. Eng muhim so'zlarni ajratib olish (3 harfdan katta)
+    important_words = [word for word in correct_text_without_number.split() if len(word) > 3]
+    
+    # 4. Barcha variantlarni tekshirish
+    is_correct = (
+        # To'liq moslik
+        user_answer == correct_text.lower().strip() or
+        user_answer == correct_text_clean or
+        user_answer == correct_text_without_number or
+        
+        # Qisman moslik (bir-birining ichida)
+        user_answer in correct_text_without_number or
+        correct_text_without_number in user_answer or
+        
+        # Muhim so'zlar tekshiruvi
+        (len(important_words) > 0 and all(word in user_answer for word in important_words)) or
+        
+        # Hech bo'lmaganda bitta muhim so'z bor
+        (len(important_words) > 0 and any(word in user_answer for word in important_words) and 
+         len(user_answer) > len(important_words[0]) - 2)
+    )
+    
+    # DEBUG: Logga yozish (muammo bo'lsa tekshirish uchun)
+    print(f"\n🔍 JAVOB TEKSHIRISH:")
+    print(f"   👤 Foydalanuvchi: '{user_answer}'")
+    print(f"   ✅ To'g'ri javob: '{correct_text}'")
+    print(f"   🧹 Tozalangan: '{correct_text_clean}'")
+    print(f"   🔢 Raqamsiz: '{correct_text_without_number}'")
+    print(f"   ⭐ Muhim so'zlar: {important_words}")
+    print(f"   📊 Natija: {is_correct}")
+    # ===== JAVOB TEKSHIRISH TUGADI =====
     
     # Javobni bazaga saqlash
     db.save_answer(user_id, question_id, 0, is_correct)
@@ -1239,7 +1282,7 @@ async def handle_text_answer(message: Message, state: FSMContext):
         session_id = active_session[0]
     
     if is_correct:
-        # TO'G'RI JAVOB
+        # ===== TO'G'RI JAVOB =====
         if not active_session:
             session_id = db.start_20_questions_session(user_id)
             if session_id:
@@ -1326,7 +1369,7 @@ async def handle_text_answer(message: Message, state: FSMContext):
             user_sessions[user_id]['current_question'] = {
                 'id': q_id,
                 'correct': correct,
-                'correct_text': correct_answer_text.lower().strip(),
+                'correct_text': correct_answer_text,
                 'options': [opt1, opt2, opt3]
             }
             
@@ -1376,7 +1419,7 @@ async def handle_text_answer(message: Message, state: FSMContext):
             )
     
     else:
-        # NOTO'G'RI JAVOB
+        # ===== NOTO'G'RI JAVOB =====
         if active_session:
             db.save_question_answer(user_id, session_id, question_id, 0, False)
             db.complete_session(session_id, user_id, success=False)
@@ -1384,11 +1427,16 @@ async def handle_text_answer(message: Message, state: FSMContext):
         # 30 daqiqa kutish vaqti
         db.set_user_wait(user_id, minutes=30)
         
+        # To'g'ri javobni chiroyli qilib ko'rsatish (raqamsiz)
+        display_correct = current_q['options'][correct-1]
+        # Raqamni olib tashlash
+        display_correct_clean = re.sub(r'^[\d\s.)]+', '', display_correct).strip()
+        
         wrong_messages = {
-            'UZ': f"❌ Noto'g'ri javob!\n\nTo'g'ri javob: {current_q['options'][correct-1]}",
-            'RU': f"❌ Неправильный ответ!\n\nПравильный ответ: {current_q['options'][correct-1]}",
-            'AR': f"❌ إجابة خاطئة!\n\nالإجابة الصحيحة: {current_q['options'][correct-1]}",
-            'EN': f"❌ Wrong answer!\n\nCorrect answer: {current_q['options'][correct-1]}"
+            'UZ': f"❌ Noto'g'ri javob!\n\n✅ To'g'ri javob: {display_correct_clean}",
+            'RU': f"❌ Неправильный ответ!\n\n✅ Правильный ответ: {display_correct_clean}",
+            'AR': f"❌ إجابة خاطئة!\n\n✅ الإجابة الصحيحة: {display_correct_clean}",
+            'EN': f"❌ Wrong answer!\n\n✅ Correct answer: {display_correct_clean}"
         }
         
         await message.answer(wrong_messages.get(lang, wrong_messages['UZ']))
@@ -1484,7 +1532,6 @@ async def inline_new_question(callback: CallbackQuery):
     
     await callback.answer()
 
-# Yangi savol (reply keyboard)
 @dp.message(lambda msg: msg.text in ["🔄 Yangi savol", "🔄 Новый вопрос", "🔄 سؤال جديد", "🔄 New question"])
 async def new_question_handler(message: Message):
     user_id = message.from_user.id
@@ -1495,35 +1542,26 @@ async def new_question_handler(message: Message):
     # User sessions ni tekshirish
     if user_id not in user_sessions:
         lang = db.get_user_language(user_id)
-        user_sessions[user_id] = {'name': '', 'lang': lang}
-        print(f"🆕 Yangi user session yaratildi: {user_id}, til: {lang}")
+        user_sessions[user_id] = {'name': '', 'lang': lang, 'seen_questions': []}
     
-    # 'seen_questions' kaliti mavjudligini tekshirish
     if 'seen_questions' not in user_sessions[user_id]:
         user_sessions[user_id]['seen_questions'] = []
-        print(f"➕ 'seen_questions' ro'yxati yaratildi")
     
     lang = user_sessions[user_id].get('lang', 'UZ')
     seen_questions = user_sessions[user_id].get('seen_questions', [])
-    
-    print(f"🔍 Yangi savol so'raldi. Foydalanuvchi tili: {lang}")
-    print(f"👁️ Ko'rilgan savollar: {len(seen_questions)} ta")
     
     # Yangi savol olish (ko'rilmagan)
     question = db.get_random_question_excluding(lang, seen_questions)
     
     if not question:
-        print("❌ Hech qanday faol savol topilmadi!")
+        # Agar barcha savollar ko'rilgan bo'lsa
         no_questions = {
-            'UZ': "Hozircha savollar mavjud emas.",
-            'RU': "Пока нет вопросов.",
-            'AR': "لا توجد أسئلة حتى الآن.",
-            'EN': "No questions available yet."
+            'UZ': "Barcha savollar yakunlandi! Tez orada yangi savollar qo'shiladi.",
+            'RU': "Все вопросы завершены! Скоро будут добавлены новые вопросы.",
+            'AR': "تم الانتهاء من جميع الأسئلة! سيتم إضافة أسئلة جديدة قريباً.",
+            'EN': "All questions completed! New questions will be added soon."
         }
-        await message.answer(
-            no_questions.get(lang, no_questions['UZ']),
-            reply_markup=get_main_menu_keyboard(lang)
-        )
+        await message.answer(no_questions.get(lang, no_questions['UZ']))
         return
     
     q_id, q_text, opt1, opt2, opt3, correct = question
@@ -1531,13 +1569,21 @@ async def new_question_handler(message: Message):
     # Savolni ko'rilganlar ro'yxatiga qo'shish
     if q_id not in seen_questions:
         user_sessions[user_id]['seen_questions'].append(q_id)
-        print(f"➕ Savol ID {q_id} ko'rilganlar ro'yxatiga qo'shildi")
     
-    print(f"✅ Savol topildi! ID: {q_id}")
+    # Joriy savol ma'lumotlarini saqlash
+    correct_answer_text = ""
+    if correct == 1:
+        correct_answer_text = opt1
+    elif correct == 2:
+        correct_answer_text = opt2
+    else:
+        correct_answer_text = opt3
     
     user_sessions[user_id]['current_question'] = {
         'id': q_id,
-        'correct': correct
+        'correct': correct,
+        'correct_text': correct_answer_text,
+        'options': [opt1, opt2, opt3]
     }
     
     question_prefix = {
@@ -1547,15 +1593,32 @@ async def new_question_handler(message: Message):
         'EN': "❓ Question"
     }
     
-    # Savol matnini yuborish
-    await message.answer(
-        f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}"
-    )
+    # Mukofot matni
+    active_session = db.get_active_session(user_id)
+    reward_text = ""
     
-    # Variantlarni yuborish
+    if active_session:
+        correct_count = active_session[1]
+        remaining = 20 - correct_count
+        reward_text = (
+            f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
+            f"🎁 **MUKOFOT DASTURI**\n"
+            f"✅ To'g'ri javoblar: {correct_count}/20\n"
+            f"⏳ Qolgan: {remaining} ta\n"
+            f"💰 Mukofot: 200 000 so'm\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+        )
+    else:
+        reward_text = (
+            f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
+            f"🎁 **20 TA SAVOLGA TO'G'RI JAVOB BERIB**\n"
+            f"💰 **200 000 SO'M YUTIB OLING!**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+        )
+    
+    # Savol matnini yuborish (mukofot matni bilan)
     await message.answer(
-        "👇 Javob variantlari:",
-        reply_markup=get_options_inline_keyboard((opt1, opt2, opt3), q_id, lang)
+        f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}{reward_text}\n\n📝 **Javobingizni yozib yuboring:**"
     )
 
 # Payg'ambarlar hayoti
