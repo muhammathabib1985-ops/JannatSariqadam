@@ -532,7 +532,7 @@ class Database:
             self.conn.commit()
             return True
         except Exception as e:
-            print(f"Error saving card: {e}")
+            print(f"Error saving card info: {e}")
             return False
     
     def mark_reward_paid(self, reward_id, admin_id, check_photo_id=None):

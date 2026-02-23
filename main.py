@@ -69,7 +69,7 @@ class AddProphet(StatesGroup):
 # Yangi state (mavjud state lar yoniga)
 class RewardState(StatesGroup):
     waiting_for_card = State()
-    confirm_card = State()
+    confirm_card = State()  
 
 # 20 ta savol uchun matn
 REWARD_MESSAGE = """
@@ -2527,72 +2527,262 @@ async def admin_rewards_page(callback: CallbackQuery):
 # FOYDALANUVCHI - KARTA RAQAMINI KIRITISH
 # ============================================
 
+# Karta raqamini qabul qilish
 @dp.message(RewardState.waiting_for_card)
 async def process_card_number(message: Message, state: FSMContext):
-    """Karta raqamini qabul qilish"""
+    user_id = message.from_user.id
     card_number = message.text.strip()
     
-    # Oddiy tekshirish
-    if len(card_number) < 16 or not card_number.replace(' ', '').isdigit():
-        await message.answer(
-            "❌ Noto'g'ri karta raqami. Iltimos, qayta kiriting:\n\n"
-            "Misol: 8600 1234 5678 9012"
-        )
+    # Foydalanuvchi tilini olish
+    lang = user_sessions.get(user_id, {}).get('lang', 'UZ')
+    
+    # Karta raqamini tekshirish (oddiy validation)
+    # Raqamlarni tozalash
+    clean_number = re.sub(r'\D', '', card_number)
+    
+    if len(clean_number) < 16 or len(clean_number) > 16:
+        # Noto'g'ri format
+        error_messages = {
+            'UZ': "❌ **Xato!**\n\nIltimos, 16 xonali karta raqamini to'g'ri kiriting.\nMisol: `8600 1234 5678 9012`",
+            'RU': "❌ **Ошибка!**\n\nПожалуйста, введите правильный 16-значный номер карты.\nПример: `8600 1234 5678 9012`",
+            'AR': "❌ **خطأ!**\n\nالرجاء إدخال رقم بطاقة صحيح مكون من 16 رقمًا.\nمثال: `8600 1234 5678 9012`",
+            'EN': "❌ **Error!**\n\nPlease enter a valid 16-digit card number.\nExample: `8600 1234 5678 9012`"
+        }
+        await message.answer(error_messages.get(lang, error_messages['UZ']))
         return
     
-    await state.update_data(card_number=card_number)
+    # Karta raqamini formatlash (chiroyli ko'rinish uchun)
+    formatted_card = ' '.join([clean_number[i:i+4] for i in range(0, 16, 4)])
     
-    await message.answer(
-        "💳 **Karta egasining to'liq ismini kiriting:**\n\n"
-        "Misol: ABDULLAYEV ABDULLA"
-    )
+    # Karta ma'lumotlarini vaqtincha saqlash
+    await state.update_data(card_number=clean_number, formatted_card=formatted_card)
+    
+    # Karta egasining ismini so'rash
+    name_messages = {
+        'UZ': "💳 **Karta egasining to'liq ismini kiriting:**\n\nMisol: `ABDULLAYEV ABDULLA`",
+        'RU': "💳 **Введите полное имя владельца карты:**\n\nПример: `ИВАНОВ ИВАН`",
+        'AR': "💳 **أدخل الاسم الكامل لصاحب البطاقة:**\n\nمثال: `عبدالله عبدالله`",
+        'EN': "💳 **Enter the full name of the card holder:**\n\nExample: `ABDULLAYEV ABDULLA`"
+    }
+    
+    await message.answer(name_messages.get(lang, name_messages['UZ']))
     await state.set_state(RewardState.confirm_card)
 
+# Karta egasining ismini qabul qilish
 @dp.message(RewardState.confirm_card)
 async def process_card_name(message: Message, state: FSMContext):
-    """Karta egasining ismini qabul qilish"""
+    user_id = message.from_user.id
     card_name = message.text.strip().upper()
     
+    # Foydalanuvchi tilini olish
+    lang = user_sessions.get(user_id, {}).get('lang', 'UZ')
+    
+    # Ismni tekshirish
     if len(card_name) < 5:
-        await message.answer("❌ Ism juda qisqa. Qayta kiriting:")
+        error_messages = {
+            'UZ': "❌ Ism juda qisqa. Iltimos, to'liq ismingizni kiriting:",
+            'RU': "❌ Имя слишком короткое. Пожалуйста, введите полное имя:",
+            'AR': "❌ الاسم قصير جدًا. الرجاء إدخال الاسم الكامل:",
+            'EN': "❌ Name is too short. Please enter your full name:"
+        }
+        await message.answer(error_messages.get(lang, error_messages['UZ']))
         return
     
+    # Oldingi ma'lumotlarni olish
     data = await state.get_data()
     card_number = data.get('card_number')
-    user_id = message.from_user.id
+    formatted_card = data.get('formatted_card')
     
-    # Karta ma'lumotlarini saqlash
-    db.save_card_info(user_id, card_number, card_name)
+    # ===== FOYDALANUVCHIGA CHIROYLI XABAR =====
+    success_messages = {
+        'UZ': (
+            "╔══════════════════════════════════════╗\n"
+            "║     ✅ **MUVOFFAQIYATLI!** ✅       ║\n"
+            "╠══════════════════════════════════════╣\n"
+            "║                                      ║\n"
+            "║   📝 **Karta ma'lumotlaringiz**      ║\n"
+            "║   💳 Raqam: `{}`  \n"
+            "║   👤 Ega: **{}**            \n"
+            "║                                      ║\n"
+            "║   ✅ **QABUL QILINDI!**              ║\n"
+            "║                                      ║\n"
+            "║   ⏳ Admin tekshiruvdan so'ng         ║\n"
+            "║   💰 mukofotingiz yuboriladi!        ║\n"
+            "║                                      ║\n"
+            "║   📱 Kartangizdan xabardor bo'lib     ║\n"
+            "║      turing!                         ║\n"
+            "║                                      ║\n"
+            "╚══════════════════════════════════════╝\n"
+            "\n"
+            "✨ **Barakalla!** ✨\n"
+            "🤲 Alloh qabul qilsin!"
+        ),
+        'RU': (
+            "╔══════════════════════════════════════╗\n"
+            "║     ✅ **УСПЕШНО!** ✅              ║\n"
+            "╠══════════════════════════════════════╣\n"
+            "║                                      ║\n"
+            "║   📝 **Данные вашей карты**          ║\n"
+            "║   💳 Номер: `{}`          \n"
+            "║   👤 Владелец: **{}**        \n"
+            "║                                      ║\n"
+            "║   ✅ **ПРИНЯТО!**                     ║\n"
+            "║                                      ║\n"
+            "║   ⏳ После проверки админом           ║\n"
+            "║   💰 приз будет отправлен!           ║\n"
+            "║                                      ║\n"
+            "║   📱 Следите за своей картой!        ║\n"
+            "║                                      ║\n"
+            "╚══════════════════════════════════════╝\n"
+            "\n"
+            "✨ **Баракялла!** ✨\n"
+            "🤲 Да примет Аллах!"
+        ),
+        'AR': (
+            "╔══════════════════════════════════════╗\n"
+            "║     ✅ **تم بنجاح!** ✅              ║\n"
+            "╠══════════════════════════════════════╣\n"
+            "║                                      ║\n"
+            "║   📝 **بيانات بطاقتك**                ║\n"
+            "║   💳 الرقم: `{}`          \n"
+            "║   👤 المالك: **{}**          \n"
+            "║                                      ║\n"
+            "║   ✅ **تم الاستلام!**                  ║\n"
+            "║                                      ║\n"
+            "║   ⏳ بعد التحقق من قبل المشرف          ║\n"
+            "║   💰 سيتم إرسال الجائزة!              ║\n"
+            "║                                      ║\n"
+            "║   📱 ترقبوا بطاقتكم!                  ║\n"
+            "║                                      ║\n"
+            "╚══════════════════════════════════════╝\n"
+            "\n"
+            "✨ **بارك الله فيك!** ✨\n"
+            "🤲 تقبل الله!"
+        ),
+        'EN': (
+            "╔══════════════════════════════════════╗\n"
+            "║     ✅ **SUCCESSFUL!** ✅            ║\n"
+            "╠══════════════════════════════════════╣\n"
+            "║                                      ║\n"
+            "║   📝 **Your card information**       ║\n"
+            "║   💳 Number: `{}`          \n"
+            "║   👤 Holder: **{}**          \n"
+            "║                                      ║\n"
+            "║   ✅ **RECEIVED!**                    ║\n"
+            "║                                      ║\n"
+            "║   ⏳ After admin verification         ║\n"
+            "║   💰 your prize will be sent!        ║\n"
+            "║                                      ║\n"
+            "║   📱 Keep an eye on your card!       ║\n"
+            "║                                      ║\n"
+            "╚══════════════════════════════════════╝\n"
+            "\n"
+            "✨ **Barakallah!** ✨\n"
+            "🤲 May Allah accept!"
+        )
+    }
     
-    # Mukofotni pending holatiga o'tkazish
-    db.cursor.execute('''
-        UPDATE rewards SET status = 'pending' 
-        WHERE user_id = ? AND status = 'active'
-    ''', (user_id,))
-    db.conn.commit()
+    await message.answer(success_messages.get(lang, success_messages['UZ']).format(formatted_card, card_name))
     
-    await message.answer(
-        "✅ **Karta ma'lumotlari qabul qilindi!**\n\n"
-        "Adminimiz tez orada tekshirib, mukofot pulingizni tashlab beradi.\n"
-        "Barakalla! 🤲"
+    # ===== KONFETTI VA TABRIKLAR =====
+    confetti = ["🎊", "✨", "🎉", "⭐", "💫", "🌟"]
+    confetti_line = ""
+    for i in range(10):
+        confetti_line += confetti[i % len(confetti)] + " "
+    
+    await message.answer(f"**{confetti_line}**")
+    await asyncio.sleep(0.5)
+    
+    # ===== ADMINGA XABAR YUBORISH =====
+    user_info = user_sessions[user_id].get('name', 'Noma\'lum')
+    username = message.from_user.username or "Yo'q"
+    
+    admin_message = (
+        "╔══════════════════════════════════════╗\n"
+        "║     💰 **YANGI MUKOFOT SO'ROVI** 💰  ║\n"
+        "╠══════════════════════════════════════╣\n"
+        "║                                      ║\n"
+        f"║   👤 **Foydalanuvchi:**             ║\n"
+        f"║      {user_info}                    ║\n"
+        f"║   🆔 **ID:** `{user_id}`            ║\n"
+        f"║   🌐 **Username:** @{username}      ║\n"
+        f"║   💳 **Karta:** `{formatted_card}`  ║\n"
+        f"║   👤 **Ega:** {card_name}           ║\n"
+        f"║   🌍 **Til:** {lang}                ║\n"
+        "║                                      ║\n"
+        "║   ⏳ **Holat:** Kutilmoqda           ║\n"
+        "║                                      ║\n"
+        "╚══════════════════════════════════════╝\n"
+        "\n"
+        "🔍 **Tekshirish uchun:** /check_rewards"
     )
     
-    # Adminlarga xabar
+    # Barcha adminlarga xabar yuborish
     for admin_id in ADMIN_IDS:
         try:
-            await bot.send_message(
-                admin_id,
-                f"💰 **YANGI MUKOFOT SO'ROVI**\n\n"
-                f"👤 Foydalanuvchi: {message.from_user.first_name}\n"
-                f"🆔 ID: `{user_id}`\n"
-                f"💳 Karta: {card_number}\n"
-                f"📝 Karta egasi: {card_name}\n\n"
-                f"⏳ Tekshirish kutilmoqda"
-            )
-        except:
-            pass
+            await bot.send_message(admin_id, admin_message)
+            # Adminlarga ham konfetti
+            await asyncio.sleep(0.2)
+            await bot.send_message(admin_id, f"**{confetti_line}**")
+        except Exception as e:
+            print(f"Admin {admin_id} ga xabar yuborilmadi: {e}")
     
+    # ===== FOYDALANUVCHIGA YAKUNIY XABAR =====
+    final_messages = {
+        'UZ': (
+            "🎯 **Ma'lumotlaringiz adminga yuborildi!**\n\n"
+            "📋 **Keyingi qadamlar:**\n"
+            "1. ✅ Admin ma'lumotlaringizni tekshiradi\n"
+            "2. ⏳ 1-24 soat ichida mukofotingiz yuboriladi\n"
+            "3. 💳 Kartangizni kuzatib turing\n"
+            "4. 📞 Savollar bo'lsa, admin bilan bog'lanishingiz mumkin\n\n"
+            "🤲 **Barakalla!**"
+        ),
+        'RU': (
+            "🎯 **Ваши данные отправлены админу!**\n\n"
+            "📋 **Следующие шаги:**\n"
+            "1. ✅ Админ проверит ваши данные\n"
+            "2. ⏳ В течение 1-24 часов приз будет отправлен\n"
+            "3. 💳 Следите за своей картой\n"
+            "4. 📞 Если есть вопросы, свяжитесь с админом\n\n"
+            "🤲 **Баракялла!**"
+        ),
+        'AR': (
+            "🎯 **تم إرسال بياناتك إلى المشرف!**\n\n"
+            "📋 **الخطوات التالية:**\n"
+            "1. ✅ سيتحقق المشرف من بياناتك\n"
+            "2. ⏳ سيتم إرسال الجائزة خلال 1-24 ساعة\n"
+            "3. 💳 ترقبوا بطاقتكم\n"
+            "4. 📞 إذا كان لديك أسئلة، اتصل بالمشرف\n\n"
+            "🤲 **بارك الله فيك!**"
+        ),
+        'EN': (
+            "🎯 **Your information has been sent to admin!**\n\n"
+            "📋 **Next steps:**\n"
+            "1. ✅ Admin will verify your information\n"
+            "2. ⏳ Within 1-24 hours the prize will be sent\n"
+            "3. 💳 Keep an eye on your card\n"
+            "4. 📞 If you have questions, contact admin\n\n"
+            "🤲 **Barakallah!**"
+        )
+    }
+    
+    await message.answer(final_messages.get(lang, final_messages['UZ']))
+    
+    # ===== ASOSIY MENYUGA QAYTISH =====
+    await message.answer(
+        "📌 **Asosiy menyu:**" if lang == 'UZ' else 
+        "📌 **Главное меню:**" if lang == 'RU' else
+        "📌 **القائمة الرئيسية:**" if lang == 'AR' else
+        "📌 **Main menu:**",
+        reply_markup=get_main_menu_keyboard(lang)
+    )
+    
+    # State ni tozalash
     await state.clear()
+    
+    # Karta ma'lumotlarini bazaga saqlash (agar kerak bo'lsa)
+    db.save_card_info(user_id, card_number, card_name)
 
 
 # ============================================
