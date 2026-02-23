@@ -1045,6 +1045,35 @@ async def questions_handler(message: Message):
     if is_admin(user_id):
         return
     
+    # ===== TILNI TO'G'RI OLISH =====
+    # Bazadan tilni olish
+    db_lang = db.get_user_language(user_id)
+    
+    # Sessiyadan tilni olish
+    if user_id in user_sessions:
+        session_lang = user_sessions[user_id].get('lang', 'UZ')
+    else:
+        session_lang = 'UZ'
+        user_sessions[user_id] = {
+            'name': '', 
+            'lang': db_lang, 
+            'questions_seen': [],
+            'new_questions_seen': []
+        }
+    
+    # Bazadagi til ustunligi
+    if db_lang != session_lang:
+        print(f"🔄 Til yangilandi: session={session_lang} -> baza={db_lang}")
+        user_sessions[user_id]['lang'] = db_lang
+        lang = db_lang
+    else:
+        lang = session_lang
+    
+    print(f"🌐 Foydalanuvchi ID: {user_id}, ishlatiladigan til: {lang}")
+    # ===== TILNI TO'G'RI OLISH TUGADI =====
+    
+    # Qolgan kod...
+    
     # User sessions ni tekshirish
     if user_id not in user_sessions:
         lang = db.get_user_language(user_id)
