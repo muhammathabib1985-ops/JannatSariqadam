@@ -1045,35 +1045,6 @@ async def questions_handler(message: Message):
     if is_admin(user_id):
         return
     
-    # ===== TILNI TO'G'RI OLISH =====
-    # Bazadan tilni olish
-    db_lang = db.get_user_language(user_id)
-    
-    # Sessiyadan tilni olish
-    if user_id in user_sessions:
-        session_lang = user_sessions[user_id].get('lang', 'UZ')
-    else:
-        session_lang = 'UZ'
-        user_sessions[user_id] = {
-            'name': '', 
-            'lang': db_lang, 
-            'questions_seen': [],
-            'new_questions_seen': []
-        }
-    
-    # Bazadagi til ustunligi
-    if db_lang != session_lang:
-        print(f"🔄 Til yangilandi: session={session_lang} -> baza={db_lang}")
-        user_sessions[user_id]['lang'] = db_lang
-        lang = db_lang
-    else:
-        lang = session_lang
-    
-    print(f"🌐 Foydalanuvchi ID: {user_id}, ishlatiladigan til: {lang}")
-    # ===== TILNI TO'G'RI OLISH TUGADI =====
-    
-    # Qolgan kod...
-    
     # User sessions ni tekshirish
     if user_id not in user_sessions:
         lang = db.get_user_language(user_id)
@@ -1083,18 +1054,9 @@ async def questions_handler(message: Message):
             'questions_seen': [],
             'new_questions_seen': []
         }
-        print(f"🆕 Yangi session: {user_id}, til: {lang}")
-    else:
-        lang = user_sessions[user_id].get('lang', 'UZ')
     
-    # Tilni bazadan tekshirish
-    db_lang = db.get_user_language(user_id)
-    if db_lang != lang:
-        print(f"🔄 Til yangilandi: {lang} -> {db_lang}")
-        lang = db_lang
-        user_sessions[user_id]['lang'] = lang
-    
-    print(f"🌐 Foydalanuvchi tili: {lang}")
+    # Tilni olish
+    lang = user_sessions[user_id].get('lang', 'UZ')
     
     if 'questions_seen' not in user_sessions[user_id]:
         user_sessions[user_id]['questions_seen'] = []
@@ -1103,10 +1065,6 @@ async def questions_handler(message: Message):
     
     # Savol olish
     question = db.get_random_question_excluding(lang, seen_questions)
-    
-    if not question and lang != 'UZ':
-        print(f"⚠️ {lang} tilida savol topilmadi, UZ ga o'tish")
-        question = db.get_random_question_excluding('UZ', seen_questions)
     
     if not question:
         if len(seen_questions) >= db.get_question_count():
@@ -1124,13 +1082,12 @@ async def questions_handler(message: Message):
             return
     
     q_id, q_text, opt1, opt2, opt3, correct = question
-    print(f"📝 Savol: {q_text[:50]}...")
     
     # Savolni ko'rilganlar ro'yxatiga qo'shish
     if q_id not in seen_questions:
         user_sessions[user_id]['questions_seen'].append(q_id)
     
-    # To'g'ri javob matnini olish
+    # Joriy savol ma'lumotlarini saqlash
     correct_answer_text = [opt1, opt2, opt3][correct-1]
     
     user_sessions[user_id]['current_question'] = {
@@ -1141,74 +1098,149 @@ async def questions_handler(message: Message):
         'source': 'questions'
     }
     
-    # ===== MUKOFOT MATNI (TO'LIQ TARJIMA QILINGAN) =====
-    active_session = db.get_active_session(user_id)
+    # Savol prefiksi
+    question_prefix = {
+        'UZ': "❓ Savol",
+        'RU': "❓ Вопрос",
+        'AR': "❓ سؤال",
+        'EN': "❓ Question"
+    }
     
-    # TILGA MOS MATNLAR
+    # MUKOFOT MATNI YO'Q! Faqat savol
+    await message.answer(
+        f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}"
+    )
+    
+    # Variantlarni dumaloq doiralar bilan yuborish
+    await message.answer(
+        "👇 Javob variantlari:",
+        reply_markup=get_circle_options_keyboard((opt1, opt2, opt3), q_id, lang)
+    )
+    
+# Dumaloq variantlar uchun javob handler
+@dp.callback_query(F.data.startswith('circle_answer_'))
+async def handle_circle_answer(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    
+    if is_admin(user_id):
+        await callback.answer()
+        return
+    
+    # Javob ma'lumotlarini olish
+    parts = callback.data.split('_')
+    question_id = int(parts[2])
+    selected = int(parts[3])
+    
+    # User sessions ni tekshirish
+    if user_id not in user_sessions or 'current_question' not in user_sessions[user_id]:
+        await callback.answer("Savol topilmadi!")
+        return
+    
+    current_q = user_sessions[user_id]['current_question']
+    correct = current_q.get('correct', 0)
+    options = current_q.get('options', [])
+    lang = user_sessions[user_id].get('lang', 'UZ')
+    
+    is_correct = (selected == correct)
+    
+    # Javobni bazaga saqlash
+    db.save_answer(user_id, question_id, selected, is_correct)
+    db.update_user_stats(user_id, is_correct)
+    
+    # 20 ta savol sessiyasini tekshirish (agar kerak bo'lsa)
+    active_session = db.get_active_session(user_id)
+    session_id = None
+    
     if active_session:
-        correct_count = active_session[1]
-        remaining_q = 20 - correct_count
-        
-        # Aktiv sessiya uchun matnlar
-        reward_title = {
-            'UZ': "🎁 **MUKOFOT DASTURI**",
-            'RU': "🎁 **ПРОГРАММА ВОЗНАГРАЖДЕНИЯ**",
-            'AR': "🎁 **برنامج المكافآت**",
-            'EN': "🎁 **REWARD PROGRAM**"
-        }
-        
-        correct_label = {
-            'UZ': "✅ To'g'ri javoblar",
-            'RU': "✅ Правильных ответов",
-            'AR': "✅ الإجابات الصحيحة",
-            'EN': "✅ Correct answers"
-        }
-        
-        remaining_label = {
-            'UZ': "⏳ Qolgan",
-            'RU': "⏳ Осталось",
-            'AR': "⏳ المتبقي",
-            'EN': "⏳ Remaining"
-        }
-        
-        prize_label = {
-            'UZ': "💰 Mukofot",
-            'RU': "💰 Приз",
-            'AR': "💰 الجائزة",
-            'EN': "💰 Prize"
-        }
-        
-        reward_text = (
-            f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
-            f"{reward_title.get(lang, reward_title['UZ'])}\n"
-            f"{correct_label.get(lang, correct_label['UZ'])}: {correct_count}/20\n"
-            f"{remaining_label.get(lang, remaining_label['UZ'])}: {remaining_q} ta\n"
-            f"{prize_label.get(lang, prize_label['UZ'])}: 200 000 so'm\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-        )
+        session_id = active_session[0]
+    
+    if is_correct:
+        # To'g'ri javob
+        if not active_session:
+            session_id = db.start_20_questions_session(user_id)
+            if session_id:
+                db.save_question_answer(user_id, session_id, question_id, selected, True)
+        else:
+            db.save_question_answer(user_id, session_id, question_id, selected, True)
     else:
-        # Yangi sessiya uchun matnlar
-        reward_start = {
-            'UZ': "🎁 **20 TA SAVOLGA TO'G'RI JAVOB BERIB**",
-            'RU': "🎁 **ОТВЕТЬТЕ ПРАВИЛЬНО НА 20 ВОПРОСОВ**",
-            'AR': "🎁 **أجب على 20 سؤالاً بشكل صحيح**",
-            'EN': "🎁 **ANSWER 20 QUESTIONS CORRECTLY**"
-        }
+        # Noto'g'ri javob
+        if active_session:
+            db.save_question_answer(user_id, session_id, question_id, selected, False)
+            db.complete_session(session_id, user_id, success=False)
         
-        reward_money = {
-            'UZ': "💰 **200 000 SO'M YUTIB OLING!**",
-            'RU': "💰 **ВЫИГРАЙТЕ 200 000 СУМ!**",
-            'AR': "💰 **اربح 200 000 سوم!**",
-            'EN': "💰 **WIN 200 000 UZS!**"
+        # 30 daqiqa kutish vaqti (agar kerak bo'lsa)
+        # db.set_user_wait(user_id, minutes=30)
+    
+    # Javob natijasini ko'rsatish (variantlar yangilanadi)
+    result_message = {
+        'UZ': "✅ To'g'ri javob! 🎉" if is_correct else f"❌ Noto'g'ri javob!\n\nTo'g'ri javob: {options[correct-1]}",
+        'RU': "✅ Правильный ответ! 🎉" if is_correct else f"❌ Неправильный ответ!\n\nПравильный ответ: {options[correct-1]}",
+        'AR': "✅ إجابة صحيحة! 🎉" if is_correct else f"❌ إجابة خاطئة!\n\nالإجابة الصحيحة: {options[correct-1]}",
+        'EN': "✅ Correct answer! 🎉" if is_correct else f"❌ Wrong answer!\n\nCorrect answer: {options[correct-1]}"
+    }
+    
+    # Xabarni yangilash (variantlar belgilar bilan)
+    await callback.message.edit_text(
+        result_message.get(lang, result_message['UZ'])
+    )
+    
+    # Variantlarni yangilangan belgilar bilan ko'rsatish
+    await callback.message.answer(
+        "📊 Natija:",
+        reply_markup=get_updated_options_keyboard(options, question_id, selected, correct, lang)
+    )
+    
+    await callback.answer()
+
+
+# Keyingi savol handler
+@dp.callback_query(F.data.startswith('next_question_'))
+async def next_question_handler(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    parts = callback.data.split('_')
+    question_id = int(parts[2])
+    
+    # User sessions ni tekshirish
+    if user_id not in user_sessions:
+        await callback.answer("Xatolik yuz berdi!")
+        return
+    
+    lang = user_sessions[user_id].get('lang', 'UZ')
+    seen_questions = user_sessions[user_id].get('questions_seen', [])
+    
+    # Yangi savol olish
+    new_question = db.get_random_question_excluding(lang, seen_questions)
+    
+    if not new_question:
+        all_done_messages = {
+            'UZ': "🎉 Tabriklaymiz! Siz barcha savollarni yakunladingiz!",
+            'RU': "🎉 Поздравляем! Вы завершили все вопросы!",
+            'AR': "🎉 مبروك! لقد أكملت جميع الأسئلة!",
+            'EN': "🎉 Congratulations! You have completed all questions!"
         }
-        
-        reward_text = (
-            f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
-            f"{reward_start.get(lang, reward_start['UZ'])}\n"
-            f"{reward_money.get(lang, reward_money['UZ'])}\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
+        await callback.message.answer(
+            all_done_messages.get(lang, all_done_messages['UZ']),
+            reply_markup=get_main_menu_keyboard(lang)
         )
-    # ===== MUKOFOT MATNI TUGADI =====
+        await callback.answer()
+        return
+    
+    q_id, q_text, opt1, opt2, opt3, correct = new_question
+    
+    # Yangi savolni ko'rilganlar ro'yxatiga qo'shish
+    if q_id not in seen_questions:
+        user_sessions[user_id]['questions_seen'].append(q_id)
+    
+    # Joriy savol ma'lumotlarini saqlash
+    correct_answer_text = [opt1, opt2, opt3][correct-1]
+    
+    user_sessions[user_id]['current_question'] = {
+        'id': q_id,
+        'correct': correct,
+        'correct_text': correct_answer_text,
+        'options': [opt1, opt2, opt3],
+        'source': 'questions'
+    }
     
     # Savol prefiksi
     question_prefix = {
@@ -1218,26 +1250,17 @@ async def questions_handler(message: Message):
         'EN': "❓ Question"
     }
     
-    # Javob yozish uchun yo'llanma
-    answer_prompt = {
-        'UZ': "\n\n📝 **Javobingizni yozib yuboring:**",
-        'RU': "\n\n📝 **Напишите ваш ответ:**",
-        'AR': "\n\n📝 **اكتب إجابتك:**",
-        'EN': "\n\n📝 **Write your answer:**"
-    }
-    
-    # Yakuniy xabar
-    final_message = (
-        f"{question_prefix.get(lang, '❓ Savol')}:\n\n"
-        f"{q_text}"
-        f"{reward_text}"
-        f"{answer_prompt.get(lang, answer_prompt['UZ'])}"
+    # Yangi xabar yuborish
+    await callback.message.answer(
+        f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}"
     )
     
-    print(f"📤 Yuborilayotgan til: {lang}")
-    print(f"📤 Mukofot matni: {reward_text[:50]}...")
+    await callback.message.answer(
+        "👇 Javob variantlari:",
+        reply_markup=get_circle_options_keyboard((opt1, opt2, opt3), q_id, lang)
+    )
     
-    await message.answer(final_message)
+    await callback.answer()    
     
 @dp.message()
 async def handle_text_answer(message: Message, state: FSMContext):
