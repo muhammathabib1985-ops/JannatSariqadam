@@ -910,23 +910,24 @@ async def cancel_save(callback: CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
-# ADMIN STATISTIKA
-@dp.message(lambda msg: msg.text == "📊 Statistika" and is_admin(msg.from_user.id))
 async def show_stats(message: Message):
     try:
         total_users = db.get_total_users()
         today_users = db.get_today_users()
         total_questions = db.get_question_count()
         questions_stats = db.get_questions_stats()
+        inactive_count = db.get_inactive_questions_count()
         
         db.cursor.execute('SELECT COUNT(*) FROM prophets')
         total_prophets = db.cursor.fetchone()[0]
         
         stats_text = (
-            f"📊 BOT STATISTIKASI\n\n"
+            f"📊 **BOT STATISTIKASI**\n\n"
             f"👥 Jami foydalanuvchilar: {total_users}\n"
             f"📅 Bugun qo'shilganlar: {today_users}\n"
             f"❓ Jami savollar: {total_questions}\n"
+            f"   ✅ Faol: {total_questions - inactive_count}\n"
+            f"   ❌ Faol emas: {inactive_count}\n"
             f"   🇺🇿 O'zbek: {questions_stats['UZ']}\n"
             f"   🇷🇺 Rus: {questions_stats['RU']}\n"
             f"   🇸🇦 Arab: {questions_stats['AR']}\n"
@@ -934,10 +935,27 @@ async def show_stats(message: Message):
             f"👤 Payg'ambarlar: {total_prophets}\n"
         )
         
-        await message.answer(stats_text, reply_markup=get_admin_keyboard('UZ'))
+        # Batafsil statistika tugmasi
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📊 Batafsil savol statistikasi", callback_data="admin_questions_stats")]
+        ])
+        
+        await message.answer(stats_text, reply_markup=keyboard)
     except Exception as e:
         logger.error(f"Error showing stats: {e}")
         await message.answer(f"❌ Xatolik: {e}")
+
+
+@dp.callback_query(F.data == "admin_questions_stats")
+async def goto_questions_stats(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    
+    await callback.message.delete()
+    await show_questions_stats(callback.message)
+    await callback.answer()
 
 # ADMIN PAYG'AMBAR QO'SHISH
 @dp.message(lambda msg: msg.text == "👤 Payg'ambar qo'shish" and is_admin(msg.from_user.id))
@@ -1258,6 +1276,137 @@ async def next_question_handler(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
         "👇 Javob variantlari:",
         reply_markup=get_circle_options_keyboard((opt1, opt2, opt3), q_id, lang)
+    )
+    
+    await callback.answer()    
+    
+@dp.message(lambda msg: msg.text in ["❓ Savollar statistikasi", "❓ Статистика вопросов"] and is_admin(msg.from_user.id))
+async def show_questions_stats(message: Message):
+    user_id = message.from_user.id
+    
+    if not is_admin(user_id):
+        return
+    
+    # Statistikani olish
+    stats = db.get_questions_detailed_stats()
+    admin_questions = db.get_questions_by_admin(user_id)
+    inactive_count = db.get_inactive_questions_count()
+    
+    # Tilni aniqlash (admin uchun)
+    lang = 'UZ'  # yoki db dan olish mumkin
+    
+    # Statistik matn
+    if lang == 'UZ':
+        text = (
+            "📊 **SAVOLLAR STATISTIKASI** 📊\n\n"
+            f"📌 **Jami savollar:** {stats['total']} ta\n"
+            f"✅ **Faol savollar:** {stats['active']} ta\n"
+            f"❌ **Faol emas:** {inactive_count} ta\n"
+            f"👤 **Siz qo'shgan:** {admin_questions} ta\n\n"
+            "🌐 **Tillarga bo'lingan:**\n"
+            f"   🇺🇿 O'zbek: {stats['lang_UZ']} ta\n"
+            f"   🇷🇺 Rus: {stats['lang_RU']} ta\n"
+            f"   🇸🇦 Arab: {stats['lang_AR']} ta\n"
+            f"   🇬🇧 Ingliz: {stats['lang_EN']} ta\n"
+        )
+    else:
+        text = (
+            "📊 **СТАТИСТИКА ВОПРОСОВ** 📊\n\n"
+            f"📌 **Всего вопросов:** {stats['total']}\n"
+            f"✅ **Активных:** {stats['active']}\n"
+            f"❌ **Неактивных:** {inactive_count}\n"
+            f"👤 **Добавлено вами:** {admin_questions}\n\n"
+            "🌐 **По языкам:**\n"
+            f"   🇺🇿 Узбекский: {stats['lang_UZ']}\n"
+            f"   🇷🇺 Русский: {stats['lang_RU']}\n"
+            f"   🇸🇦 Арабский: {stats['lang_AR']}\n"
+            f"   🇬🇧 Английский: {stats['lang_EN']}\n"
+        )
+    
+    # Oxirgi savollar
+    if stats['recent']:
+        if lang == 'UZ':
+            text += "\n📋 **Oxirgi qo'shilgan savollar:**\n"
+        else:
+            text += "\n📋 **Последние добавленные вопросы:**\n"
+        
+        for i, q in enumerate(stats['recent'][:5], 1):
+            q_id, q_text, created_at, is_active = q
+            status = "✅" if is_active else "❌"
+            date_str = created_at[:16] if created_at else "Noma'lum"
+            text += f"{i}. {status} ID {q_id}: {q_text[:40]}... ({date_str})\n"
+    
+    # Oylik statistika
+    if stats['monthly']:
+        if lang == 'UZ':
+            text += "\n📅 **Oylik statistika:**\n"
+        else:
+            text += "\n📅 **Месячная статистика:**\n"
+        
+        for month, count in stats['monthly']:
+            text += f"   {month}: {count} ta\n"
+    
+    # Inline keyboard (faollashtirish/o'chirish uchun)
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Yangilash", callback_data="admin_refresh_stats")],
+        [InlineKeyboardButton(text="📥 Excel yuklash", callback_data="admin_export_questions")],
+        [InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin")]
+    ])
+    
+    await message.answer(text, reply_markup=keyboard)
+
+
+@dp.callback_query(F.data == "admin_refresh_stats")
+async def refresh_stats(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    
+    await callback.message.delete()
+    await show_questions_stats(callback.message)
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "admin_export_questions")
+async def export_questions(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    
+    # Excel fayl yaratish (soddaroq variant - CSV)
+    import csv
+    import io
+    from datetime import datetime
+    
+    db.cursor.execute('''
+        SELECT id, question_uz, question_ru, question_ar, question_en,
+               correct_option, created_at, is_active
+        FROM questions
+        ORDER BY id DESC
+    ''')
+    
+    questions = db.cursor.fetchall()
+    
+    # CSV fayl yaratish
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['ID', 'Savol (UZ)', 'Savol (RU)', 'Savol (AR)', 'Savol (EN)', 
+                     'To\'g\'ri javob', 'Qo\'shilgan vaqt', 'Faol'])
+    
+    for q in questions:
+        writer.writerow(q)
+    
+    csv_data = output.getvalue().encode('utf-8')
+    
+    # Faylni yuborish
+    from aiogram.types import InputFile
+    from aiogram import types
+    
+    await callback.message.answer_document(
+        types.InputFile(io.BytesIO(csv_data), filename=f"questions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"),
+        caption="📥 Savollar ro'yxati"
     )
     
     await callback.answer()    

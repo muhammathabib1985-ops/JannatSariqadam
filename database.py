@@ -670,3 +670,72 @@ class Database:
         except Exception as e:
             print(f"Error closing database: {e}")
             
+    def get_questions_detailed_stats(self):
+        """Savollar haqida batafsil statistika olish"""
+        try:
+            stats = {}
+            
+            # Jami savollar
+            self.cursor.execute('SELECT COUNT(*) FROM questions')
+            stats['total'] = self.cursor.fetchone()[0]
+            
+            # Faol savollar
+            self.cursor.execute('SELECT COUNT(*) FROM questions WHERE is_active = 1')
+            stats['active'] = self.cursor.fetchone()[0]
+            
+            # Har bir tildagi savollar
+            for lang in ['UZ', 'RU', 'AR', 'EN']:
+                self.cursor.execute(f'''
+                    SELECT COUNT(*) FROM questions 
+                    WHERE question_{lang} IS NOT NULL 
+                    AND question_{lang} != ''
+                    AND is_active = 1
+                ''')
+                stats[f'lang_{lang}'] = self.cursor.fetchone()[0]
+            
+            # Oxirgi 10 ta savol
+            self.cursor.execute('''
+                SELECT id, question_uz, created_at, is_active 
+                FROM questions 
+                ORDER BY created_at DESC 
+                LIMIT 10
+            ''')
+            stats['recent'] = self.cursor.fetchall()
+            
+            # Har oyda qo'shilgan savollar (oxirgi 6 oy)
+            self.cursor.execute('''
+                SELECT strftime('%Y-%m', created_at) as month, COUNT(*) as count
+                FROM questions
+                WHERE created_at IS NOT NULL
+                GROUP BY month
+                ORDER BY month DESC
+                LIMIT 6
+            ''')
+            stats['monthly'] = self.cursor.fetchall()
+            
+            return stats
+        except Exception as e:
+            print(f"Error getting questions stats: {e}")
+            return {'total': 0, 'active': 0, 'lang_UZ': 0, 'lang_RU': 0, 'lang_AR': 0, 'lang_EN': 0, 'recent': [], 'monthly': []}
+
+    def get_questions_by_admin(self, admin_id):
+        """Admin tomonidan qo'shilgan savollar"""
+        try:
+            self.cursor.execute('''
+                SELECT COUNT(*) FROM questions 
+                WHERE created_by = ?
+            ''', (admin_id,))
+            return self.cursor.fetchone()[0]
+        except Exception as e:
+            print(f"Error getting questions by admin: {e}")
+            return 0
+
+    def get_inactive_questions_count(self):
+        """Faol bo'lmagan savollar soni"""
+        try:
+            self.cursor.execute('SELECT COUNT(*) FROM questions WHERE is_active = 0')
+            return self.cursor.fetchone()[0]
+        except Exception as e:
+            print(f"Error getting inactive questions: {e}")
+            return 0        
+            

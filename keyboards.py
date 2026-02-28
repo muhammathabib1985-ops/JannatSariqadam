@@ -84,7 +84,6 @@ def get_main_menu_keyboard(lang='UZ'):
     
     return builder.as_markup(resize_keyboard=True)
 
-# Admin panel uchun reply keyboard (kengaytirilgan)
 def get_admin_keyboard(lang='UZ'):
     texts = {
         'UZ': {
@@ -92,6 +91,7 @@ def get_admin_keyboard(lang='UZ'):
             'add_prophet': '👤 Payg\'ambar qo\'shish',
             'stats': '📊 Statistika',
             'users': '👥 Foydalanuvchilar',
+            'questions_stats': '❓ Savollar statistikasi',  # YANGI
             'view_answers': '📝 Javoblarni ko\'rish',
             'rewards': '💰 Mukofotlar',
             'pending_rewards': '⏳ Kutilayotgan mukofotlar',
@@ -102,6 +102,7 @@ def get_admin_keyboard(lang='UZ'):
             'add_prophet': '👤 Добавить пророка',
             'stats': '📊 Статистика',
             'users': '👥 Пользователи',
+            'questions_stats': '❓ Статистика вопросов',  # YANGI
             'view_answers': '📝 Просмотр ответов',
             'rewards': '💰 Награды',
             'pending_rewards': '⏳ Ожидающие награды',
@@ -116,11 +117,12 @@ def get_admin_keyboard(lang='UZ'):
     builder.add(KeyboardButton(text=t['add_prophet']))
     builder.add(KeyboardButton(text=t['stats']))
     builder.add(KeyboardButton(text=t['users']))
+    builder.add(KeyboardButton(text=t['questions_stats']))  # YANGI
     builder.add(KeyboardButton(text=t['view_answers']))
     builder.add(KeyboardButton(text=t['rewards']))
     builder.add(KeyboardButton(text=t['pending_rewards']))
     builder.add(KeyboardButton(text=t['back']))
-    builder.adjust(2, 2, 2, 2)
+    builder.adjust(2, 2, 2, 3)  # 2,2,2,3 qilib joylashtirish
     
     return builder.as_markup(resize_keyboard=True)
 
