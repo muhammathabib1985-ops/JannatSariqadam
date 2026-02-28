@@ -174,6 +174,27 @@ class Database:
             )
         ''')
         
+        # Foydalanuvchi kutish vaqtlari jadvali
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_wait_times (
+                user_id INTEGER PRIMARY KEY,
+                wait_until TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            )
+        ''')
+
+        # Noto'g'ri javob berilgan savollar jadvali
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_wrong_questions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                question_id INTEGER,
+                answered_at TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                FOREIGN KEY (question_id) REFERENCES questions(id)
+            )
+        ''')
+        
         self.conn.commit()
         print("✅ Database tables created successfully")
         
@@ -737,5 +758,79 @@ class Database:
             return self.cursor.fetchone()[0]
         except Exception as e:
             print(f"Error getting inactive questions: {e}")
-            return 0        
+            return 0       
+
+
+    def set_user_wait(self, user_id, minutes=15):
+        """Foydalanuvchi uchun kutish vaqti o'rnatish"""
+        try:
+            from datetime import datetime, timedelta
+            wait_until = datetime.now() + timedelta(minutes=minutes)
+            self.cursor.execute('''
+                INSERT OR REPLACE INTO user_wait_times (user_id, wait_until)
+                VALUES (?, ?)
+            ''', (user_id, wait_until))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error setting wait time: {e}")
+            return False
+
+    def check_user_wait(self, user_id):
+        """Foydalanuvchi kutish vaqtida yoki yo'qligini tekshirish"""
+        try:
+            from datetime import datetime
+            self.cursor.execute('''
+                SELECT wait_until FROM user_wait_times WHERE user_id = ?
+            ''', (user_id,))
+            result = self.cursor.fetchone()
+            
+            if result:
+                wait_until = datetime.fromisoformat(result[0])
+                if datetime.now() < wait_until:
+                    remaining = (wait_until - datetime.now()).seconds // 60
+                    return True, remaining
+                else:
+                    self.cursor.execute('DELETE FROM user_wait_times WHERE user_id = ?', (user_id,))
+                    self.conn.commit()
+                    return False, 0
+            return False, 0
+        except Exception as e:
+            print(f"Error checking wait time: {e}")
+            return False, 0
+
+    def save_wrong_question(self, user_id, question_id):
+        """Noto'g'ri javob berilgan savolni saqlash (qayta chiqmasligi uchun)"""
+        try:
+            self.cursor.execute('''
+                INSERT INTO user_wrong_questions (user_id, question_id, answered_at)
+                VALUES (?, ?, ?)
+            ''', (user_id, question_id, datetime.now()))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error saving wrong question: {e}")
+            return False
+
+    def get_excluded_questions(self, user_id):
+        """Foydalanuvchi ko'rgan va noto'g'ri javob bergan savollar ID larini olish"""
+        try:
+            # Ko'rilgan savollar
+            self.cursor.execute('''
+                SELECT question_id FROM user_answers WHERE user_id = ?
+            ''', (user_id,))
+            seen = [row[0] for row in self.cursor.fetchall()]
+            
+            # Noto'g'ri javob berilgan savollar
+            self.cursor.execute('''
+                SELECT question_id FROM user_wrong_questions WHERE user_id = ?
+            ''', (user_id,))
+            wrong = [row[0] for row in self.cursor.fetchall()]
+            
+            # Barchasini birlashtirish
+            excluded = list(set(seen + wrong))
+            return excluded
+        except Exception as e:
+            print(f"Error getting excluded questions: {e}")
+            return []        
             

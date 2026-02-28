@@ -1063,85 +1063,73 @@ async def questions_handler(message: Message):
     if is_admin(user_id):
         return
     
+    # Kutish vaqtini tekshirish
+    is_waiting, remaining = db.check_user_wait(user_id)
+    if is_waiting:
+        lang = user_sessions.get(user_id, {}).get('lang', 'UZ')
+        wait_messages = {
+            'UZ': f"⏳ **{remaining} daqiqa kutishingiz kerak!**\n\nSiz noto'g'ri javob berganingiz uchun keyingi savol {remaining} daqiqadan so'ng yuboriladi.\nIltimos, sabr qiling! 🤲",
+            'RU': f"⏳ **Нужно подождать {remaining} минут!**\n\nИз-за неверного ответа следующий вопрос будет доступен через {remaining} минут.\nПожалуйста, наберитесь терпения! 🤲",
+            'AR': f"⏳ **عليك الانتظار {remaining} دقيقة!**\n\nبسبب إجابتك الخاطئة، سيكون السؤال التالي متاحًا بعد {remaining} دقيقة.\nيرجى التحلي بالصبر! 🤲",
+            'EN': f"⏳ **{remaining} minutes wait!**\n\nDue to your wrong answer, the next question will be available in {remaining} minutes.\nPlease be patient! 🤲"
+        }
+        await message.answer(wait_messages.get(lang, wait_messages['UZ']))
+        return
+    
     # User sessions ni tekshirish
     if user_id not in user_sessions:
         lang = db.get_user_language(user_id)
-        user_sessions[user_id] = {
-            'name': '', 
-            'lang': lang, 
-            'questions_seen': [],
-            'new_questions_seen': []
-        }
+        user_sessions[user_id] = {'name': '', 'lang': lang, 'questions_seen': []}
     
-    # Tilni olish
     lang = user_sessions[user_id].get('lang', 'UZ')
     
-    if 'questions_seen' not in user_sessions[user_id]:
-        user_sessions[user_id]['questions_seen'] = []
-    
-    seen_questions = user_sessions[user_id]['questions_seen']
+    # Foydalanuvchi ko'rmagan va noto'g'ri javob bermagan savollarni olish
+    excluded = db.get_excluded_questions(user_id)
     
     # Savol olish
-    question = db.get_random_question_excluding(lang, seen_questions)
+    question = db.get_random_question_excluding(lang, excluded)
     
     if not question:
-        if len(seen_questions) >= db.get_question_count():
-            user_sessions[user_id]['questions_seen'] = []
-            question = db.get_random_question_excluding(lang, [])
-        
-        if not question:
-            no_questions = {
-                'UZ': "Hozircha savollar mavjud emas.",
-                'RU': "Пока нет вопросов.",
-                'AR': "لا توجد أسئلة حتى الآن.",
-                'EN': "No questions available yet."
-            }
-            await message.answer(no_questions.get(lang, no_questions['UZ']))
-            return
+        no_questions = {
+            'UZ': "Hozircha savollar mavjud emas.",
+            'RU': "Пока нет вопросов.",
+            'AR': "لا توجد أسئلة حتى الآن.",
+            'EN': "No questions available yet."
+        }
+        await message.answer(no_questions.get(lang, no_questions['UZ']))
+        return
     
     q_id, q_text, opt1, opt2, opt3, correct = question
     
-    # Savolni ko'rilganlar ro'yxatiga qo'shish
-    if q_id not in seen_questions:
-        user_sessions[user_id]['questions_seen'].append(q_id)
-    
     # Joriy savol ma'lumotlarini saqlash
-    correct_answer_text = [opt1, opt2, opt3][correct-1]
-    
     user_sessions[user_id]['current_question'] = {
         'id': q_id,
         'correct': correct,
-        'correct_text': correct_answer_text,
-        'options': [opt1, opt2, opt3],
-        'source': 'questions'
+        'correct_text': [opt1, opt2, opt3][correct-1],
+        'options': [opt1, opt2, opt3]
     }
     
     # Savol prefiksi
-    question_prefix = {
-        'UZ': "❓ Savol",
-        'RU': "❓ Вопрос",
-        'AR': "❓ سؤال",
-        'EN': "❓ Question"
-    }
+    question_prefix = {'UZ': "❓ Savol", 'RU': "❓ Вопрос", 'AR': "❓ سؤال", 'EN': "❓ Question"}
     
-    # MUKOFOT MATNI YO'Q! Faqat savol
-    await message.answer(
-        f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}"
-    )
-    
-    # Variantlarni dumaloq doiralar bilan yuborish
+    await message.answer(f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}")
     await message.answer(
         "👇 Javob variantlari:",
         reply_markup=get_circle_options_keyboard((opt1, opt2, opt3), q_id, lang)
     )
     
-# Dumaloq variantlar uchun javob handler
 @dp.callback_query(F.data.startswith('circle_answer_'))
 async def handle_circle_answer(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     
     if is_admin(user_id):
         await callback.answer()
+        return
+    
+    # Kutish vaqtini tekshirish
+    is_waiting, remaining = db.check_user_wait(user_id)
+    if is_waiting:
+        await callback.answer(f"⏳ {remaining} daqiqa kutishingiz kerak", show_alert=True)
         return
     
     # Javob ma'lumotlarini olish
@@ -1165,7 +1153,7 @@ async def handle_circle_answer(callback: CallbackQuery, state: FSMContext):
     db.save_answer(user_id, question_id, selected, is_correct)
     db.update_user_stats(user_id, is_correct)
     
-    # 20 ta savol sessiyasini tekshirish (agar kerak bo'lsa)
+    # 20 ta savol sessiyasini tekshirish
     active_session = db.get_active_session(user_id)
     session_id = None
     
@@ -1173,42 +1161,125 @@ async def handle_circle_answer(callback: CallbackQuery, state: FSMContext):
         session_id = active_session[0]
     
     if is_correct:
-        # To'g'ri javob
+        # ===== TO'G'RI JAVOB =====
         if not active_session:
             session_id = db.start_20_questions_session(user_id)
             if session_id:
                 db.save_question_answer(user_id, session_id, question_id, selected, True)
         else:
             db.save_question_answer(user_id, session_id, question_id, selected, True)
+        
+        # Natija xabari
+        result_msg = {
+            'UZ': "✅ To'g'ri javob! 🎉",
+            'RU': "✅ Правильный ответ! 🎉",
+            'AR': "✅ إجابة صحيحة! 🎉",
+            'EN': "✅ Correct answer! 🎉"
+        }
+        
+        await callback.message.edit_text(result_msg.get(lang, result_msg['UZ']))
+        
+        # Yangilangan variantlar (✅ va ❌ belgilari bilan)
+        await callback.message.answer(
+            "📊 Natija:",
+            reply_markup=get_updated_options_keyboard(options, question_id, selected, correct, lang)
+        )
+        
+        # KEYINGI SAVOLNI AVTOMATIK YUBORISH (1 soniya kutib)
+        await asyncio.sleep(1)
+        await send_next_question(callback.message, user_id, lang)
+        
     else:
-        # Noto'g'ri javob
+        # ===== NOTO'G'RI JAVOB =====
         if active_session:
             db.save_question_answer(user_id, session_id, question_id, selected, False)
             db.complete_session(session_id, user_id, success=False)
         
-        # 30 daqiqa kutish vaqti (agar kerak bo'lsa)
-        # db.set_user_wait(user_id, minutes=30)
-    
-    # Javob natijasini ko'rsatish (variantlar yangilanadi)
-    result_message = {
-        'UZ': "✅ To'g'ri javob! 🎉" if is_correct else f"❌ Noto'g'ri javob!\n\nTo'g'ri javob: {options[correct-1]}",
-        'RU': "✅ Правильный ответ! 🎉" if is_correct else f"❌ Неправильный ответ!\n\nПравильный ответ: {options[correct-1]}",
-        'AR': "✅ إجابة صحيحة! 🎉" if is_correct else f"❌ إجابة خاطئة!\n\nالإجابة الصحيحة: {options[correct-1]}",
-        'EN': "✅ Correct answer! 🎉" if is_correct else f"❌ Wrong answer!\n\nCorrect answer: {options[correct-1]}"
-    }
-    
-    # Xabarni yangilash (variantlar belgilar bilan)
-    await callback.message.edit_text(
-        result_message.get(lang, result_message['UZ'])
-    )
-    
-    # Variantlarni yangilangan belgilar bilan ko'rsatish
-    await callback.message.answer(
-        "📊 Natija:",
-        reply_markup=get_updated_options_keyboard(options, question_id, selected, correct, lang)
-    )
+        # Noto'g'ri javob berilgan savolni saqlash (qayta chiqmasligi uchun)
+        db.save_wrong_question(user_id, question_id)
+        
+        # 15 daqiqa kutish vaqti
+        db.set_user_wait(user_id, minutes=15)
+        
+        # Natija xabari
+        wrong_msg = {
+            'UZ': f"❌ Noto'g'ri javob!\n\n✅ To'g'ri javob: {options[correct-1]}",
+            'RU': f"❌ Неправильный ответ!\n\n✅ Правильный ответ: {options[correct-1]}",
+            'AR': f"❌ إجابة خاطئة!\n\n✅ الإجابة الصحيحة: {options[correct-1]}",
+            'EN': f"❌ Wrong answer!\n\n✅ Correct answer: {options[correct-1]}"
+        }
+        
+        await callback.message.edit_text(wrong_msg.get(lang, wrong_msg['UZ']))
+        
+        # Yangilangan variantlar
+        await callback.message.answer(
+            "📊 Natija:",
+            reply_markup=get_updated_options_keyboard(options, question_id, selected, correct, lang)
+        )
+        
+        # Kutish vaqti xabari
+        wait_msg = {
+            'UZ': "⏳ **15 daqiqa kutishingiz kerak!**\n\nSiz noto'g'ri javob berganingiz uchun keyingi savol 15 daqiqadan so'ng yuboriladi.\nIltimos, sabr qiling! 🤲",
+            'RU': "⏳ **Нужно подождать 15 минут!**\n\nИз-за неверного ответа следующий вопрос будет доступен через 15 минут.\nПожалуйста, наберитесь терпения! 🤲",
+            'AR': "⏳ **عليك الانتظار 15 دقيقة!**\n\nبسبب إجابتك الخاطئة، سيكون السؤال التالي متاحًا بعد 15 دقيقة.\nيرجى التحلي بالصبر! 🤲",
+            'EN': "⏳ **15 minutes wait!**\n\nDue to your wrong answer, the next question will be available in 15 minutes.\nPlease be patient! 🤲"
+        }
+        
+        await callback.message.answer(wait_msg.get(lang, wait_msg['UZ']))
+        
+        # 15 daqiqadan so'ng avtomatik yangi savol yuborish (background task)
+        asyncio.create_task(delayed_next_question(callback.message, user_id, lang, 15 * 60))
     
     await callback.answer()
+
+
+async def send_next_question(message: Message, user_id: int, lang: str):
+    """Yangi savol yuborish"""
+    # Foydalanuvchi ko'rmagan va noto'g'ri javob bermagan savollarni olish
+    excluded = db.get_excluded_questions(user_id)
+    
+    # Yangi savol olish
+    new_question = db.get_random_question_excluding(lang, excluded)
+    
+    if not new_question:
+        all_done_messages = {
+            'UZ': "🎉 Tabriklaymiz! Siz barcha savollarni yakunladingiz!",
+            'RU': "🎉 Поздравляем! Вы завершили все вопросы!",
+            'AR': "🎉 مبروك! لقد أكملت جميع الأسئلة!",
+            'EN': "🎉 Congratulations! You have completed all questions!"
+        }
+        await message.answer(all_done_messages.get(lang, all_done_messages['UZ']),
+                            reply_markup=get_main_menu_keyboard(lang))
+        return
+    
+    q_id, q_text, opt1, opt2, opt3, correct = new_question
+    
+    # Joriy savol ma'lumotlarini saqlash
+    user_sessions[user_id]['current_question'] = {
+        'id': q_id,
+        'correct': correct,
+        'correct_text': [opt1, opt2, opt3][correct-1],
+        'options': [opt1, opt2, opt3]
+    }
+    
+    # Savol prefiksi
+    question_prefix = {'UZ': "❓ Savol", 'RU': "❓ Вопрос", 'AR': "❓ سؤال", 'EN': "❓ Question"}
+    
+    await message.answer(f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}")
+    await message.answer(
+        "👇 Javob variantlari:",
+        reply_markup=get_circle_options_keyboard((opt1, opt2, opt3), q_id, lang)
+    )
+
+
+async def delayed_next_question(message: Message, user_id: int, lang: str, delay_seconds: int):
+    """Kutish vaqtidan keyin yangi savol yuborish"""
+    await asyncio.sleep(delay_seconds)
+    
+    # Kutish vaqti tugaganligini tekshirish
+    is_waiting, _ = db.check_user_wait(user_id)
+    if not is_waiting:
+        await send_next_question(message, user_id, lang)
 
 
 # Keyingi savol handler
