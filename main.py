@@ -1079,7 +1079,7 @@ async def questions_handler(message: Message):
     # User sessions ni tekshirish
     if user_id not in user_sessions:
         lang = db.get_user_language(user_id)
-        user_sessions[user_id] = {'name': '', 'lang': lang, 'questions_seen': []}
+        user_sessions[user_id] = {'name': '', 'lang': lang}
     
     lang = user_sessions[user_id].get('lang', 'UZ')
     
@@ -1110,7 +1110,7 @@ async def questions_handler(message: Message):
     }
     
     # Savol prefiksi
-    question_prefix = {'UZ': "❓ Savol", 'RU': "❓ Вопрос", 'AR': "❓ سؤال", 'EN': "❓ Question"}
+    question_prefix = {'UZ': "❓ **Savol**", 'RU': "❓ **Вопрос**", 'AR': "❓ **سؤال**", 'EN': "❓ **Question**"}
     
     await message.answer(f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}")
     await message.answer(
@@ -1118,119 +1118,97 @@ async def questions_handler(message: Message):
         reply_markup=get_circle_options_keyboard((opt1, opt2, opt3), q_id, lang)
     )
     
-@dp.callback_query(F.data.startswith('circle_answer_'))
-async def handle_circle_answer(callback: CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
+# Dumaloq variantlar uchun inline keyboard (RANGSIZ ○)
+def get_circle_options_keyboard(options: tuple, question_id: int, lang='UZ'):
+    """
+    Variantlarni rangsiz dumaloq doira (○) ko'rinishida ko'rsatish
+    """
+    builder = InlineKeyboardBuilder()
     
-    if is_admin(user_id):
-        await callback.answer()
-        return
+    for i, option in enumerate(options, 1):
+        if option:
+            # Rangsiz dumaloq doira
+            button_text = f"○ {i}. {option}"
+            builder.add(InlineKeyboardButton(
+                text=button_text,
+                callback_data=f"circle_answer_{question_id}_{i}"
+            ))
     
-    # Kutish vaqtini tekshirish
-    is_waiting, remaining = db.check_user_wait(user_id)
-    if is_waiting:
-        await callback.answer(f"⏳ {remaining} daqiqa kutishingiz kerak", show_alert=True)
-        return
+    # Orqaga tugmasi
+    menu_texts = {
+        'UZ': "🔙 Menyu",
+        'RU': "🔙 Меню",
+        'AR': "🔙 القائمة",
+        'EN': "🔙 Menu"
+    }
     
-    # Javob ma'lumotlarini olish
-    parts = callback.data.split('_')
-    question_id = int(parts[2])
-    selected = int(parts[3])
+    builder.add(InlineKeyboardButton(
+        text=menu_texts.get(lang, "🔙 Menyu"),
+        callback_data="back_to_menu"
+    ))
     
-    # User sessions ni tekshirish
-    if user_id not in user_sessions or 'current_question' not in user_sessions[user_id]:
-        await callback.answer("Savol topilmadi!")
-        return
+    # 2 tadan qilib joylashtirish
+    builder.adjust(2, 2, 1)
     
-    current_q = user_sessions[user_id]['current_question']
-    correct = current_q.get('correct', 0)
-    options = current_q.get('options', [])
-    lang = user_sessions[user_id].get('lang', 'UZ')
+    return builder.as_markup()
+
+
+# Javobdan keyin yangilangan variantlar (YASHIL 🟢 va QIZIL 🔴)
+def get_updated_options_keyboard(options: tuple, question_id: int, selected: int, correct: int, lang='UZ'):
+    """
+    Javobdan keyin variantlarni yangilash:
+    - To'g'ri javob: 🟢 YASHIL
+    - Noto'g'ri tanlangan: 🔴 QIZIL
+    - Boshqa variantlar: ○ RANGSIZ
+    """
+    builder = InlineKeyboardBuilder()
     
-    is_correct = (selected == correct)
+    for i, option in enumerate(options, 1):
+        if option:
+            if i == correct:
+                # TO'G'RI JAVOB - YASHIL 🟢
+                icon = "🟢"
+            elif i == selected and i != correct:
+                # NOTO'G'RI TANLANGAN - QIZIL 🔴
+                icon = "🔴"
+            else:
+                # BOSQA VARIANTLAR - RANGSIZ ○
+                icon = "○"
+            
+            button_text = f"{icon} {i}. {option}"
+            builder.add(InlineKeyboardButton(
+                text=button_text,
+                callback_data=f"disabled_{i}"  # Qayta bosish mumkin emas
+            ))
     
-    # Javobni bazaga saqlash
-    db.save_answer(user_id, question_id, selected, is_correct)
-    db.update_user_stats(user_id, is_correct)
+    # Keyingi savol tugmasi
+    next_texts = {
+        'UZ': "⏩ Keyingi savol",
+        'RU': "⏩ Следующий вопрос",
+        'AR': "⏩ السؤال التالي",
+        'EN': "⏩ Next question"
+    }
     
-    # 20 ta savol sessiyasini tekshirish
-    active_session = db.get_active_session(user_id)
-    session_id = None
+    menu_texts = {
+        'UZ': "🔙 Menyu",
+        'RU': "🔙 Меню",
+        'AR': "🔙 القائمة",
+        'EN': "🔙 Menu"
+    }
     
-    if active_session:
-        session_id = active_session[0]
+    builder.add(InlineKeyboardButton(
+        text=next_texts.get(lang, "⏩ Keyingi savol"),
+        callback_data=f"next_question_{question_id}"
+    ))
     
-    if is_correct:
-        # ===== TO'G'RI JAVOB =====
-        if not active_session:
-            session_id = db.start_20_questions_session(user_id)
-            if session_id:
-                db.save_question_answer(user_id, session_id, question_id, selected, True)
-        else:
-            db.save_question_answer(user_id, session_id, question_id, selected, True)
-        
-        # Natija xabari
-        result_msg = {
-            'UZ': "✅ To'g'ri javob! 🎉",
-            'RU': "✅ Правильный ответ! 🎉",
-            'AR': "✅ إجابة صحيحة! 🎉",
-            'EN': "✅ Correct answer! 🎉"
-        }
-        
-        await callback.message.edit_text(result_msg.get(lang, result_msg['UZ']))
-        
-        # Yangilangan variantlar (✅ va ❌ belgilari bilan)
-        await callback.message.answer(
-            "📊 Natija:",
-            reply_markup=get_updated_options_keyboard(options, question_id, selected, correct, lang)
-        )
-        
-        # KEYINGI SAVOLNI AVTOMATIK YUBORISH (1 soniya kutib)
-        await asyncio.sleep(1)
-        await send_next_question(callback.message, user_id, lang)
-        
-    else:
-        # ===== NOTO'G'RI JAVOB =====
-        if active_session:
-            db.save_question_answer(user_id, session_id, question_id, selected, False)
-            db.complete_session(session_id, user_id, success=False)
-        
-        # Noto'g'ri javob berilgan savolni saqlash (qayta chiqmasligi uchun)
-        db.save_wrong_question(user_id, question_id)
-        
-        # 15 daqiqa kutish vaqti
-        db.set_user_wait(user_id, minutes=15)
-        
-        # Natija xabari
-        wrong_msg = {
-            'UZ': f"❌ Noto'g'ri javob!\n\n✅ To'g'ri javob: {options[correct-1]}",
-            'RU': f"❌ Неправильный ответ!\n\n✅ Правильный ответ: {options[correct-1]}",
-            'AR': f"❌ إجابة خاطئة!\n\n✅ الإجابة الصحيحة: {options[correct-1]}",
-            'EN': f"❌ Wrong answer!\n\n✅ Correct answer: {options[correct-1]}"
-        }
-        
-        await callback.message.edit_text(wrong_msg.get(lang, wrong_msg['UZ']))
-        
-        # Yangilangan variantlar
-        await callback.message.answer(
-            "📊 Natija:",
-            reply_markup=get_updated_options_keyboard(options, question_id, selected, correct, lang)
-        )
-        
-        # Kutish vaqti xabari
-        wait_msg = {
-            'UZ': "⏳ **15 daqiqa kutishingiz kerak!**\n\nSiz noto'g'ri javob berganingiz uchun keyingi savol 15 daqiqadan so'ng yuboriladi.\nIltimos, sabr qiling! 🤲",
-            'RU': "⏳ **Нужно подождать 15 минут!**\n\nИз-за неверного ответа следующий вопрос будет доступен через 15 минут.\nПожалуйста, наберитесь терпения! 🤲",
-            'AR': "⏳ **عليك الانتظار 15 دقيقة!**\n\nبسبب إجابتك الخاطئة، سيكون السؤال التالي متاحًا بعد 15 دقيقة.\nيرجى التحلي بالصبر! 🤲",
-            'EN': "⏳ **15 minutes wait!**\n\nDue to your wrong answer, the next question will be available in 15 minutes.\nPlease be patient! 🤲"
-        }
-        
-        await callback.message.answer(wait_msg.get(lang, wait_msg['UZ']))
-        
-        # 15 daqiqadan so'ng avtomatik yangi savol yuborish (background task)
-        asyncio.create_task(delayed_next_question(callback.message, user_id, lang, 15 * 60))
+    builder.add(InlineKeyboardButton(
+        text=menu_texts.get(lang, "🔙 Menyu"),
+        callback_data="back_to_menu"
+    ))
     
-    await callback.answer()
+    builder.adjust(2, 2, 2)
+    
+    return builder.as_markup()
 
 
 async def send_next_question(message: Message, user_id: int, lang: str):
@@ -1243,10 +1221,10 @@ async def send_next_question(message: Message, user_id: int, lang: str):
     
     if not new_question:
         all_done_messages = {
-            'UZ': "🎉 Tabriklaymiz! Siz barcha savollarni yakunladingiz!",
-            'RU': "🎉 Поздравляем! Вы завершили все вопросы!",
-            'AR': "🎉 مبروك! لقد أكملت جميع الأسئلة!",
-            'EN': "🎉 Congratulations! You have completed all questions!"
+            'UZ': "🎉 **Tabriklaymiz!**\n\nSiz barcha savollarni yakunladingiz!",
+            'RU': "🎉 **Поздравляем!**\n\nВы завершили все вопросы!",
+            'AR': "🎉 **تهانينا!**\n\nلقد أكملت جميع الأسئلة!",
+            'EN': "🎉 **Congratulations!**\n\nYou have completed all questions!"
         }
         await message.answer(all_done_messages.get(lang, all_done_messages['UZ']),
                             reply_markup=get_main_menu_keyboard(lang))
@@ -1263,7 +1241,7 @@ async def send_next_question(message: Message, user_id: int, lang: str):
     }
     
     # Savol prefiksi
-    question_prefix = {'UZ': "❓ Savol", 'RU': "❓ Вопрос", 'AR': "❓ سؤال", 'EN': "❓ Question"}
+    question_prefix = {'UZ': "❓ **Savol**", 'RU': "❓ **Вопрос**", 'AR': "❓ **سؤال**", 'EN': "❓ **Question**"}
     
     await message.answer(f"{question_prefix.get(lang, '❓ Savol')}:\n\n{q_text}")
     await message.answer(
