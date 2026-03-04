@@ -1118,108 +1118,151 @@ async def questions_handler(message: Message):
         reply_markup=get_circle_options_keyboard((opt1, opt2, opt3), q_id, lang)
     )
     
-# Dumaloq variantlar uchun inline keyboard (RANGSIZ ○)
-def get_circle_options_keyboard(options: tuple, question_id: int, lang='UZ'):
-    """
-    Variantlarni rangsiz dumaloq doira (○) ko'rinishida ko'rsatish
-    """
-    builder = InlineKeyboardBuilder()
+@dp.callback_query(F.data.startswith('circle_answer_'))
+async def handle_circle_answer(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
     
-    for i, option in enumerate(options, 1):
-        if option:
-            # Rangsiz dumaloq doira
-            button_text = f"○ {i}. {option}"
-            builder.add(InlineKeyboardButton(
-                text=button_text,
-                callback_data=f"circle_answer_{question_id}_{i}"
-            ))
+    # ===== DEBUG UCHUN =====
+    print(f"\n🔴🔴🔴 CALLBACK KELDI: {callback.data}")
+    print(f"🔴 Foydalanuvchi ID: {user_id}")
+    # ======================
     
-    # Orqaga tugmasi
-    menu_texts = {
-        'UZ': "🔙 Menyu",
-        'RU': "🔙 Меню",
-        'AR': "🔙 القائمة",
-        'EN': "🔙 Menu"
-    }
+    if is_admin(user_id):
+        await callback.answer()
+        return
     
-    builder.add(InlineKeyboardButton(
-        text=menu_texts.get(lang, "🔙 Menyu"),
-        callback_data="back_to_menu"
-    ))
+    # Kutish vaqtini tekshirish
+    is_waiting, remaining = db.check_user_wait(user_id)
+    if is_waiting:
+        await callback.answer(f"⏳ {remaining} daqiqa kutishingiz kerak", show_alert=True)
+        return
     
-    # 2 tadan qilib joylashtirish
-    builder.adjust(2, 2, 1)
-    
-    return builder.as_markup()
-
-
-# Javobdan keyin yangilangan variantlar (YASHIL 🟢 va QIZIL 🔴)
-def get_updated_options_keyboard(options: tuple, question_id: int, selected: int, correct: int, lang='UZ'):
-    """
-    Javobdan keyin variantlarni yangilash:
-    - To'g'ri javob: 🟢 YASHIL
-    - Noto'g'ri tanlangan: 🔴 QIZIL
-    - Boshqa variantlar: ○ RANGSIZ
-    """
-    builder = InlineKeyboardBuilder()
-    
-    for i, option in enumerate(options, 1):
-        if option:
-            if i == correct:
-                # TO'G'RI JAVOB - YASHIL 🟢
-                icon = "🟢"
-            elif i == selected and i != correct:
-                # NOTO'G'RI TANLANGAN - QIZIL 🔴
-                icon = "🔴"
-            else:
-                # BOSQA VARIANTLAR - RANGSIZ ○
-                icon = "○"
+    # Javob ma'lumotlarini olish
+    try:
+        parts = callback.data.split('_')
+        if len(parts) < 4:
+            await callback.answer("Xatolik: noto'g'ri format", show_alert=True)
+            return
             
-            button_text = f"{icon} {i}. {option}"
-            builder.add(InlineKeyboardButton(
-                text=button_text,
-                callback_data=f"disabled_{i}"  # Qayta bosish mumkin emas
-            ))
+        question_id = int(parts[2])
+        selected = int(parts[3])
+        print(f"🔴 Savol ID: {question_id}, Tanlangan: {selected}")
+    except Exception as e:
+        print(f"🔴 Xatolik: {e}")
+        await callback.answer("Xatolik yuz berdi!", show_alert=True)
+        return
     
-    # Keyingi savol tugmasi
-    next_texts = {
-        'UZ': "⏩ Keyingi savol",
-        'RU': "⏩ Следующий вопрос",
-        'AR': "⏩ السؤال التالي",
-        'EN': "⏩ Next question"
-    }
+    # User sessions ni tekshirish
+    if user_id not in user_sessions:
+        print(f"🔴 User sessions topilmadi: {user_id}")
+        await callback.answer("Sessiya topilmadi! Iltimos, qaytadan boshlang.", show_alert=True)
+        return
     
-    menu_texts = {
-        'UZ': "🔙 Menyu",
-        'RU': "🔙 Меню",
-        'AR': "🔙 القائمة",
-        'EN': "🔙 Menu"
-    }
+    if 'current_question' not in user_sessions[user_id]:
+        print(f"🔴 current_question topilmadi: {user_id}")
+        await callback.answer("Joriy savol topilmadi!", show_alert=True)
+        return
     
-    builder.add(InlineKeyboardButton(
-        text=next_texts.get(lang, "⏩ Keyingi savol"),
-        callback_data=f"next_question_{question_id}"
-    ))
+    current_q = user_sessions[user_id]['current_question']
+    correct = current_q.get('correct', 0)
+    options = current_q.get('options', [])
+    lang = user_sessions[user_id].get('lang', 'UZ')
     
-    builder.add(InlineKeyboardButton(
-        text=menu_texts.get(lang, "🔙 Menyu"),
-        callback_data="back_to_menu"
-    ))
+    print(f"🔴 To'g'ri javob: {correct}, Tanlangan: {selected}")
     
-    builder.adjust(2, 2, 2)
+    is_correct = (selected == correct)
+    print(f"🔴 Natija: {'✅ To\'g\'ri' if is_correct else '❌ Noto\'g\'ri'}")
     
-    return builder.as_markup()
+    # Javobni bazaga saqlash
+    db.save_answer(user_id, question_id, selected, is_correct)
+    db.update_user_stats(user_id, is_correct)
+    
+    # 20 ta savol sessiyasini tekshirish
+    active_session = db.get_active_session(user_id)
+    session_id = None
+    
+    if active_session:
+        session_id = active_session[0]
+    
+    if is_correct:
+        # ===== TO'G'RI JAVOB =====
+        print(f"🔴 TO'G'RI JAVOB!")
+        
+        if not active_session:
+            session_id = db.start_20_questions_session(user_id)
+            if session_id:
+                db.save_question_answer(user_id, session_id, question_id, selected, True)
+        else:
+            db.save_question_answer(user_id, session_id, question_id, selected, True)
+        
+        # Joriy xabarni yangilash (variantlar bilan)
+        try:
+            await callback.message.edit_text(
+                f"✅ **To'g'ri javob!**\n\n👇 Natijalar:",
+                reply_markup=get_updated_options_keyboard(options, question_id, selected, correct, lang)
+            )
+            print(f"🔴 Xabar muvaffaqiyatli yangilandi")
+        except Exception as e:
+            print(f"🔴 Xabarni yangilashda xatolik: {e}")
+        
+        # KEYINGI SAVOLNI AVTOMATIK YUBORISH (1.5 soniya kutib)
+        await asyncio.sleep(1.5)
+        await send_next_question(callback.message, user_id, lang)
+        
+    else:
+        # ===== NOTO'G'RI JAVOB =====
+        print(f"🔴 NOTO'G'RI JAVOB!")
+        
+        if active_session:
+            db.save_question_answer(user_id, session_id, question_id, selected, False)
+            db.complete_session(session_id, user_id, success=False)
+        
+        # Noto'g'ri javob berilgan savolni saqlash (qayta chiqmasligi uchun)
+        db.save_wrong_question(user_id, question_id)
+        
+        # 15 daqiqa kutish vaqti
+        db.set_user_wait(user_id, minutes=15)
+        
+        # Joriy xabarni yangilash (variantlar bilan)
+        try:
+            await callback.message.edit_text(
+                f"❌ **Noto'g'ri javob!**\n\n✅ **To'g'ri javob:** {options[correct-1]}\n\n👇 Natijalar:",
+                reply_markup=get_updated_options_keyboard(options, question_id, selected, correct, lang)
+            )
+            print(f"🔴 Xabar muvaffaqiyatli yangilandi")
+        except Exception as e:
+            print(f"🔴 Xabarni yangilashda xatolik: {e}")
+        
+        # Kutish vaqti xabari
+        wait_msg = {
+            'UZ': "⏳ **15 daqiqa kutishingiz kerak!**\n\nSiz noto'g'ri javob berganingiz uchun keyingi savol 15 daqiqadan so'ng yuboriladi.\nIltimos, sabr qiling! 🤲",
+            'RU': "⏳ **Нужно подождать 15 минут!**\n\nИз-за неверного ответа следующий вопрос будет доступен через 15 минут.\nПожалуйста, наберитесь терпения! 🤲",
+            'AR': "⏳ **عليك الانتظار 15 دقيقة!**\n\nبسبب إجابتك الخاطئة، سيكون السؤال التالي متاحًا بعد 15 دقيقة.\nيرجى التحلي بالصبر! 🤲",
+            'EN': "⏳ **15 minutes wait!**\n\nDue to your wrong answer, the next question will be available in 15 minutes.\nPlease be patient! 🤲"
+        }
+        
+        await callback.message.answer(wait_msg.get(lang, wait_msg['UZ']))
+        
+        # 15 daqiqadan so'ng avtomatik yangi savol yuborish
+        asyncio.create_task(delayed_next_question(callback.message, user_id, lang, 15 * 60))
+    
+    await callback.answer()
+    print(f"🔴 Handler tugadi")
 
 
 async def send_next_question(message: Message, user_id: int, lang: str):
     """Yangi savol yuborish"""
+    print(f"🔵 Yangi savol yuborilmoqda: user={user_id}, lang={lang}")
+    
     # Foydalanuvchi ko'rmagan va noto'g'ri javob bermagan savollarni olish
     excluded = db.get_excluded_questions(user_id)
+    print(f"🔵 Excluded savollar: {excluded}")
     
     # Yangi savol olish
     new_question = db.get_random_question_excluding(lang, excluded)
     
     if not new_question:
+        print(f"🔵 Savollar tugagan!")
         all_done_messages = {
             'UZ': "🎉 **Tabriklaymiz!**\n\nSiz barcha savollarni yakunladingiz!",
             'RU': "🎉 **Поздравляем!**\n\nВы завершили все вопросы!",
@@ -1231,6 +1274,7 @@ async def send_next_question(message: Message, user_id: int, lang: str):
         return
     
     q_id, q_text, opt1, opt2, opt3, correct = new_question
+    print(f"🔵 Yangi savol ID: {q_id}")
     
     # Joriy savol ma'lumotlarini saqlash
     user_sessions[user_id]['current_question'] = {
@@ -1248,16 +1292,22 @@ async def send_next_question(message: Message, user_id: int, lang: str):
         "👇 Javob variantlari:",
         reply_markup=get_circle_options_keyboard((opt1, opt2, opt3), q_id, lang)
     )
+    print(f"🔵 Yangi savol yuborildi")
 
 
 async def delayed_next_question(message: Message, user_id: int, lang: str, delay_seconds: int):
     """Kutish vaqtidan keyin yangi savol yuborish"""
+    print(f"🟡 {delay_seconds} sekund kutish boshlandi...")
     await asyncio.sleep(delay_seconds)
+    print(f"🟡 Kutish tugadi, yangi savol tekshirilmoqda...")
     
     # Kutish vaqti tugaganligini tekshirish
     is_waiting, _ = db.check_user_wait(user_id)
     if not is_waiting:
+        print(f"🟡 Yangi savol yuborilmoqda...")
         await send_next_question(message, user_id, lang)
+    else:
+        print(f"🟡 Hali kutish vaqti tugamagan")
 
 
 # Keyingi savol handler
