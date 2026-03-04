@@ -473,14 +473,20 @@ def get_updated_options_keyboard(options: tuple, question_id: int, selected: int
     
     for i, option in enumerate(options, 1):
         if option:
-            if i == correct:
-                # TO'G'RI JAVOB - YASHIL 🟢
+            if i == selected and i == correct:
+                # FOYDALANUVCHI TO'G'RI JAVOBNI TANLAGAN 🟢
                 icon = "🟢"
             elif i == selected and i != correct:
-                # NOTO'G'RI TANLANGAN - QIZIL 🔴
+                # FOYDALANUVCHI NOTO'G'RI JAVOBNI TANLAGAN 🔴
                 icon = "🔴"
+            elif i == correct and i != selected:
+                # TO'G'RI JAVOB LEKIN TANLANMAGAN (yashil bo'lishi kerakmi? Sizning talabingiz bo'yicha)
+                # Agar to'g'ri javobni ham ko'rsatmoqchi bo'lsangiz:
+                icon = "🟢"
+                # Agar to'g'ri javobni faqat tanlangandagina ko'rsatmoqchi bo'lsangiz:
+                # icon = "○"
             else:
-                # BOSQA VARIANTLAR - RANGSIZ ○
+                # BOSHQA VARIANTLAR ○
                 icon = "○"
             
             button_text = f"{icon} {i}. {option}"
@@ -516,4 +522,42 @@ def get_updated_options_keyboard(options: tuple, question_id: int, selected: int
     
     builder.adjust(2, 2, 2)
     
-    return builder.as_markup()   
+    return builder.as_markup()
+
+
+# Javobdan keyin faqat natija ko'rsatish (QAYTA BOSISH MUMKIN EMAS)
+def get_result_only_keyboard(options: tuple, correct: int, lang='UZ'):
+    """
+    Javobdan keyin faqat natijani ko'rsatish, qayta bosish mumkin emas
+    """
+    builder = InlineKeyboardBuilder()
+    
+    for i, option in enumerate(options, 1):
+        if option:
+            if i == correct:
+                icon = "🟢"  # To'g'ri javob
+            else:
+                icon = "○"   # Boshqa variantlar
+            
+            button_text = f"{icon} {i}. {option}"
+            builder.add(InlineKeyboardButton(
+                text=button_text,
+                callback_data="ignore"  # Hech narsa qilmaydi
+            ))
+    
+    # Orqaga tugmasi
+    menu_texts = {
+        'UZ': "🔙 Menyu",
+        'RU': "🔙 Меню",
+        'AR': "🔙 القائمة",
+        'EN': "🔙 Menu"
+    }
+    
+    builder.add(InlineKeyboardButton(
+        text=menu_texts.get(lang, "🔙 Menyu"),
+        callback_data="back_to_menu"
+    ))
+    
+    builder.adjust(2, 2, 1)
+    
+    return builder.as_markup()
