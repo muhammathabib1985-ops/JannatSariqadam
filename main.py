@@ -1171,7 +1171,14 @@ async def handle_circle_answer(callback: CallbackQuery, state: FSMContext):
     print(f"🔴 To'g'ri javob: {correct}, Tanlangan: {selected}")
     
     is_correct = (selected == correct)
-    print(f"🔴 Natija: {'✅ To\'g\'ri' if is_correct else '❌ Noto\'g\'ri'}")
+    
+    # ===== TUZATILGAN QISM (backslash muammosi hal qilindi) =====
+    if is_correct:
+        result_text = "✅ To'g'ri"
+    else:
+        result_text = "❌ Noto'g'ri"
+    print(f"🔴 Natija: {result_text}")
+    # ===========================================================
     
     # Javobni bazaga saqlash
     db.save_answer(user_id, question_id, selected, is_correct)
