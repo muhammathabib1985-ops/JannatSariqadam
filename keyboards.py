@@ -426,17 +426,17 @@ def get_allah_names_inline_keyboard(names: list, lang='UZ', page=0, items_per_pa
     
     return builder.as_markup()    
     
-# Dumaloq variantlar uchun inline keyboard (RANGSIZ ○)
+# Dumaloq variantlar uchun inline keyboard (RANGSIZ OPPOQ ⚪)
 def get_circle_options_keyboard(options: tuple, question_id: int, lang='UZ'):
     """
-    Variantlarni rangsiz dumaloq doira (○) ko'rinishida ko'rsatish
+    Variantlarni oppoq rangsiz dumaloq doira (⚪) ko'rinishida ko'rsatish
     """
     builder = InlineKeyboardBuilder()
     
     for i, option in enumerate(options, 1):
         if option:
-            # Rangsiz dumaloq doira
-            button_text = f"○ {i}. {option}"
+            # Oppoq rangsiz dumaloq doira (⚪)
+            button_text = f"⚪ {i}. {option}"
             builder.add(InlineKeyboardButton(
                 text=button_text,
                 callback_data=f"circle_answer_{question_id}_{i}"
@@ -461,12 +461,12 @@ def get_circle_options_keyboard(options: tuple, question_id: int, lang='UZ'):
     return builder.as_markup()
 
 
-# Javobdan keyin yangilangan variantlar (faqat tanlangan variant rangli)
+# Javobdan keyin yangilangan variantlar (⚪, 🟢, 🔴)
 def get_updated_options_keyboard(options: tuple, question_id: int, selected: int, correct: int, lang='UZ'):
     """
     Javobdan keyin variantlarni yangilash:
     - Tanlangan variant: 🟢 (agar to'g'ri bo'lsa) yoki 🔴 (agar noto'g'ri bo'lsa)
-    - Boshqa variantlar: ○ (rangsiz)
+    - Boshqa variantlar: ⚪ (oppoq rangsiz)
     """
     builder = InlineKeyboardBuilder()
     
@@ -475,12 +475,12 @@ def get_updated_options_keyboard(options: tuple, question_id: int, selected: int
             if i == selected:
                 # Tanlangan variant
                 if i == correct:
-                    icon = "🟢"  # To'g'ri javob tanlangan
+                    icon = "🟢"  # To'g'ri javob tanlangan - yashil
                 else:
-                    icon = "🔴"  # Noto'g'ri javob tanlangan
+                    icon = "🔴"  # Noto'g'ri javob tanlangan - qizil
             else:
-                # Tanlanmagan variantlar (rangsiz)
-                icon = "○"
+                # Tanlanmagan variantlar (oppoq rangsiz)
+                icon = "⚪"
             
             button_text = f"{icon} {i}. {option}"
             builder.add(InlineKeyboardButton(
@@ -518,24 +518,24 @@ def get_updated_options_keyboard(options: tuple, question_id: int, selected: int
     return builder.as_markup()
 
 
-# Javobdan keyin faqat natija ko'rsatish (QAYTA BOSISH MUMKIN EMAS)
+# FAQAT NATIJA UCHUN (tanlash imkoniyatisiz)
 def get_result_only_keyboard(options: tuple, correct: int, lang='UZ'):
     """
-    Javobdan keyin faqat natijani ko'rsatish, qayta bosish mumkin emas
+    Javobdan keyin faqat natijani ko'rsatish (qayta bosish mumkin emas)
     """
     builder = InlineKeyboardBuilder()
     
     for i, option in enumerate(options, 1):
         if option:
             if i == correct:
-                icon = "🟢"  # To'g'ri javob
+                icon = "🟢"  # To'g'ri javob - yashil
             else:
-                icon = "○"   # Boshqa variantlar
+                icon = "⚪"  # Boshqa variantlar - oppoq rangsiz
             
             button_text = f"{icon} {i}. {option}"
             builder.add(InlineKeyboardButton(
                 text=button_text,
-                callback_data="ignore"  # Hech narsa qilmaydi
+                callback_data="ignore"
             ))
     
     # Orqaga tugmasi
