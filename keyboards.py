@@ -461,32 +461,25 @@ def get_circle_options_keyboard(options: tuple, question_id: int, lang='UZ'):
     return builder.as_markup()
 
 
-# Javobdan keyin yangilangan variantlar (YASHIL 🟢 va QIZIL 🔴)
+# Javobdan keyin yangilangan variantlar (faqat tanlangan variant rangli)
 def get_updated_options_keyboard(options: tuple, question_id: int, selected: int, correct: int, lang='UZ'):
     """
     Javobdan keyin variantlarni yangilash:
-    - To'g'ri javob: 🟢 YASHIL
-    - Noto'g'ri tanlangan: 🔴 QIZIL
-    - Boshqa variantlar: ○ RANGSIZ
+    - Tanlangan variant: 🟢 (agar to'g'ri bo'lsa) yoki 🔴 (agar noto'g'ri bo'lsa)
+    - Boshqa variantlar: ○ (rangsiz)
     """
     builder = InlineKeyboardBuilder()
     
     for i, option in enumerate(options, 1):
         if option:
-            if i == selected and i == correct:
-                # FOYDALANUVCHI TO'G'RI JAVOBNI TANLAGAN 🟢
-                icon = "🟢"
-            elif i == selected and i != correct:
-                # FOYDALANUVCHI NOTO'G'RI JAVOBNI TANLAGAN 🔴
-                icon = "🔴"
-            elif i == correct and i != selected:
-                # TO'G'RI JAVOB LEKIN TANLANMAGAN (yashil bo'lishi kerakmi? Sizning talabingiz bo'yicha)
-                # Agar to'g'ri javobni ham ko'rsatmoqchi bo'lsangiz:
-                icon = "🟢"
-                # Agar to'g'ri javobni faqat tanlangandagina ko'rsatmoqchi bo'lsangiz:
-                # icon = "○"
+            if i == selected:
+                # Tanlangan variant
+                if i == correct:
+                    icon = "🟢"  # To'g'ri javob tanlangan
+                else:
+                    icon = "🔴"  # Noto'g'ri javob tanlangan
             else:
-                # BOSHQA VARIANTLAR ○
+                # Tanlanmagan variantlar (rangsiz)
                 icon = "○"
             
             button_text = f"{icon} {i}. {option}"
