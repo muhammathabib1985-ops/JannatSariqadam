@@ -10,7 +10,7 @@ from googletrans import Translator
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
-router = Router()
+router = Router()  # Sizda router bor
 db = Database()
 translator = Translator()
 
@@ -42,15 +42,18 @@ class AddPromoVideo(StatesGroup):
     waiting_for_video = State()
     waiting_for_caption = State() 
 
-@dp.message(lambda msg: msg.text == "🎬 Reklama video qo'shish" and is_admin(msg.from_user.id))
+# ===== MUHIM: @dp.message emas, @router.message =====
+@router.message(lambda msg: msg.text == "🎬 Reklama video qo'shish" and is_admin(msg.from_user.id))
 async def add_promo_start(message: Message, state: FSMContext):
+    print(f"🔴🔴🔴 Reklama video qo'shish tugmasi bosildi! Admin: {message.from_user.id}")
     await message.answer(
         "📹 **Yangi reklama videosi qo'shish**\n\n"
         "Video faylni yuboring (MP4 formatida):"
     )
     await state.set_state(AddPromoVideo.waiting_for_video)
 
-@dp.message(AddPromoVideo.waiting_for_video, F.video)
+# ===== MUHIM: @dp.message emas, @router.message =====
+@router.message(AddPromoVideo.waiting_for_video, F.video)
 async def process_promo_video(message: Message, state: FSMContext):
     video_id = message.video.file_id
     await state.update_data(video_id=video_id)
@@ -63,7 +66,8 @@ async def process_promo_video(message: Message, state: FSMContext):
     )
     await state.set_state(AddPromoVideo.waiting_for_caption)
 
-@dp.message(AddPromoVideo.waiting_for_caption)
+# ===== MUHIM: @dp.message emas, @router.message =====
+@router.message(AddPromoVideo.waiting_for_caption)
 async def process_promo_caption(message: Message, state: FSMContext):
     caption = message.text if message.text != "/skip" else ""
     
@@ -77,13 +81,22 @@ async def process_promo_caption(message: Message, state: FSMContext):
         await message.answer(
             f"✅ **Reklama video muvaffaqiyatli qo'shildi!** (ID: {promo_id})\n\n"
             f"📹 Video ID: `{video_id}`\n"
-            f"📝 Caption: {caption if caption else 'Yo'q'}\n\n"
+            f"📝 Caption: {caption if caption else 'Yo\\'q'}\n\n"
             f"Yangi foydalanuvchilar salovotlardan keyin ushbu videoni ko'rishadi."
         )
     else:
         await message.answer("❌ Xatolik yuz berdi!")
     
     await state.clear()
+
+
+# ===== VIDEO QABUL QILMASA (video emas, boshqa narsa yuborilsa) =====
+@router.message(AddPromoVideo.waiting_for_video)
+async def process_promo_video_error(message: Message, state: FSMContext):
+    await message.answer(
+        "❌ **Xato!** Iltimos, video fayl yuboring (MP4 formatida).\n\n"
+        "📹 Video yuborish uchun: 📎 → Video → MP4 fayl tanlang"
+    )
 
 @dp.message(AddPromoVideo.waiting_for_caption, Command("skip"))
 async def skip_caption(message: Message, state: FSMContext):
