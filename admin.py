@@ -36,155 +36,9 @@ class AddQuestion(StatesGroup):
 
 class AddProphet(StatesGroup):
     waiting_for_name_uz = State()
-    waiting_for_video = State()  # audio -> video
-    
-class AddPromoVideo(StatesGroup):
-    waiting_for_video = State()
-    waiting_for_caption = State()
+    waiting_for_audio = State()
 
-# ============================================
-# PAYG'AMBAR QO'SHISH (VIDEO BILAN)
-# ============================================
-
-async def add_prophet_start(message: Message, state: FSMContext):
-    """Payg'ambar qo'shishni boshlash"""
-    await message.answer(
-        "👤 Yangi payg'ambar qo'shish\n\n"
-        "Payg'ambar nomini O'ZBEK tilida kiriting:"
-    )
-    await state.set_state(AddProphet.waiting_for_name_uz)
-
-@router.message(AddProphet.waiting_for_name_uz)
-async def process_prophet_name(message: Message, state: FSMContext):
-    """Payg'ambar nomini qabul qilish"""
-    if not is_admin(message.from_user.id):
-        await state.clear()
-        return
-    
-    name = message.text.strip()
-    if not name:
-        await message.answer("❌ Nom bo'sh bo'lmasligi kerak!")
-        return
-    
-    await state.update_data(name_uz=name)
-    
-    await message.answer(
-        "✅ Nom qabul qilindi!\n\n"
-        "Endi payg'ambar haqidagi **VIDEO** faylni yuboring:"
-    )
-    await state.set_state(AddProphet.waiting_for_video)  # waiting_for_video
-
-@router.message(AddProphet.waiting_for_video, F.video)  # F.video bilan
-async def process_prophet_video(message: Message, state: FSMContext):
-    """Video faylni qabul qilish"""
-    if not is_admin(message.from_user.id):
-        await state.clear()
-        return
-    
-    if not message.video:
-        await message.answer("❌ Iltimos, video fayl yuboring!")
-        return
-    
-    video_id = message.video.file_id
-    data = await state.get_data()
-    
-    try:
-        # Barcha tillarga tarjima qilish
-        name_ru = await translator.translate(data['name_uz'], dest='ru')
-        name_ru = name_ru.text
-        name_ar = await translator.translate(data['name_uz'], dest='ar')
-        name_ar = name_ar.text
-        name_en = await translator.translate(data['name_uz'], dest='en')
-        name_en = name_en.text
-        
-        # Database ga saqlash (video_file_id)
-        prophet_id = db.add_prophet(
-            data['name_uz'], 
-            name_ru, 
-            name_ar, 
-            name_en, 
-            video_id  # video_id saqlanadi
-        )
-        
-        success_text = (
-            f"✅ Payg'ambar muvaffaqiyatli qo'shildi! (ID: {prophet_id})\n\n"
-            f"📝 O'zbekcha: {data['name_uz']}\n"
-            f"🇷🇺 Ruscha: {name_ru}\n"
-            f"🇸🇦 Arabcha: {name_ar}\n"
-            f"🇬🇧 Inglizcha: {name_en}\n\n"
-            f"📹 Video ID: `{video_id}`"
-        )
-        
-        await message.answer(success_text)
-        await message.answer(
-            "Admin panel:",
-            reply_markup=get_admin_keyboard('UZ')
-        )
-        
-    except Exception as e:
-        logger.error(f"Error adding prophet: {e}")
-        await message.answer(f"❌ Xatolik: {e}")
-    
-    await state.clear()
-
-@router.message(AddProphet.waiting_for_video)
-async def process_prophet_video_error(message: Message, state: FSMContext):
-    """Video emas boshqa narsa yuborilsa"""
-    await message.answer(
-        "❌ **Xato!** Iltimos, video fayl yuboring (MP4 formatida).\n\n"
-        "📹 Video yuborish uchun: 📎 → Video → MP4 fayl tanlang"
-    )
-
-@router.message(Command("skip"))
-async def skip_caption(message: Message, state: FSMContext):
-    """Caption ni skip qilish"""
-    current_state = await state.get_state()
-    if current_state == AddPromoVideo.waiting_for_caption.state:
-        await process_promo_caption(message, state)
-
-# ============================================
-# REKLAMA STATISTIKASI HANDLERLARI
-# ============================================
-
-@router.message(lambda msg: msg.text == "📊 Reklama statistikasi" and is_admin(msg.from_user.id))
-async def show_promo_stats(message: Message):
-    """Reklama statistikasini ko'rsatish"""
-    stats = db.get_promo_stats()
-    
-    if not stats:
-        await message.answer("📭 Reklama statistikasi topilmadi")
-        return
-    
-    # Matnni tayyorlash
-    text = "📊 **REKLAMA STATISTIKASI** 📊\n\n"
-    
-    if stats['active_video']:
-        video_id, file_id, caption, created_at = stats['active_video']
-        text += f"🎬 **Faol video:**\n"
-        text += f"   🆔 ID: {video_id}\n"
-        text += f"   📅 Qo'shilgan: {created_at[:16] if created_at else 'Noma\\'lum'}\n"
-        text += f"   📝 Caption: {caption if caption else 'Yo\\'q'}\n\n"
-    else:
-        text += "🎬 **Faol video yo'q**\n\n"
-    
-    text += f"👁️ **Jami ko'rishlar:** {stats['total_views']}\n"
-    text += f"👥 **Unikal foydalanuvchilar:** {stats['unique_users']}\n"
-    text += f"📊 **Barcha vaqtlardagi ko'rishlar:** {stats['all_time_views']}\n"
-    text += f"👤 **Barcha vaqtlardagi foydalanuvchilar:** {stats['all_time_users']}\n\n"
-    
-    if stats['recent_views']:
-        text += "🕒 **Oxirgi ko'rishlar:**\n"
-        for i, (name, username, viewed_at) in enumerate(stats['recent_views'][:5], 1):
-            username_text = f"@{username}" if username else "no username"
-            time_str = viewed_at[:16] if viewed_at else "Noma'lum"
-            text += f"{i}. 👤 {name} ({username_text}) - {time_str}\n"
-    
-    await message.answer(text)
-
-# ============================================
-# ADMIN PANEL ASOSIY HANDLERLARI
-# ============================================
-
+# MUHIM: Barcha admin handlerlari uchun maxsus filter
 @router.message(lambda message: message.from_user.id in admin_ids)
 async def admin_message_handler(message: Message, state: FSMContext):
     """Barcha admin xabarlarini ushlab, tegishli funksiyaga yo'naltiradi"""
@@ -205,93 +59,17 @@ async def admin_message_handler(message: Message, state: FSMContext):
         await add_prophet_start(message, state)
     elif text == "📊 Statistika":
         await show_stats(message)
-    elif text == "🎬 Reklama video qo'shish":
-        await add_promo_start(message, state)
-    elif text == "📊 Reklama statistikasi":
-        await show_promo_stats(message)
     elif text == "🔙 Chiqish":
         await admin_exit(message)
+    # Boshqa xabarlar - e'tiborsiz qoldirish
 
-# ============================================
-# SAVOL QO'SHISH FUNKSIYALARI
-# ============================================
-
+# SAVOL QO'SHISH
 async def add_question_start(message: Message, state: FSMContext):
-    """Savol qo'shishni boshlash"""
     await message.answer(
         "📝 Yangi savol qo'shish\n\n"
         "Savol matnini O'ZBEK tilida kiriting:"
     )
     await state.set_state(AddQuestion.waiting_for_question_uz)
-
-@router.message(AddQuestion.waiting_for_question_uz)
-async def process_question_uz(message: Message, state: FSMContext):
-    """Savol matnini qabul qilish"""
-    if not is_admin(message.from_user.id):
-        await state.clear()
-        return
-    
-    await state.update_data(question_uz=message.text)
-    
-    await message.answer(
-        "✅ Savol qabul qilindi!\n\n"
-        "Endi 3 ta JAVOB variantini kiriting (har bir qatorda bittadan):\n"
-        "Misol:\n"
-        "Variant 1\n"
-        "Variant 2\n"
-        "Variant 3"
-    )
-    await state.set_state(AddQuestion.waiting_for_options_uz)
-
-# ============================================
-# STATISTIKA FUNKSIYASI
-# ============================================
-
-async def show_stats(message: Message):
-    """Statistika ko'rsatish"""
-    try:
-        total_users = db.get_total_users()
-        today_users = db.get_today_users()
-        total_questions = db.get_question_count()
-        
-        db.cursor.execute('SELECT COUNT(*) FROM prophets')
-        total_prophets = db.cursor.fetchone()[0]
-        
-        stats_text = (
-            f"📊 BOT STATISTIKASI\n\n"
-            f"👥 Jami foydalanuvchilar: {total_users}\n"
-            f"📅 Bugun qo'shilganlar: {today_users}\n"
-            f"❓ Jami savollar: {total_questions}\n"
-            f"👤 Payg'ambarlar: {total_prophets}\n"
-        )
-        
-        await message.answer(stats_text, reply_markup=get_admin_keyboard('UZ'))
-    except Exception as e:
-        logger.error(f"Error showing stats: {e}")
-        await message.answer(f"❌ Xatolik: {e}")
-
-# ============================================
-# PAYG'AMBAR QO'SHISH FUNKSIYALARI
-# ============================================
-
-async def add_prophet_start(message: Message, state: FSMContext):
-    """Payg'ambar qo'shishni boshlash"""
-    await message.answer(
-        "👤 Yangi payg'ambar qo'shish\n\n"
-        "Payg'ambar nomini O'ZBEK tilida kiriting:"
-    )
-    await state.set_state(AddProphet.waiting_for_name_uz)
-
-# ============================================
-# CHIQISH FUNKSIYASI
-# ============================================
-
-async def admin_exit(message: Message):
-    """Admin panelidan chiqish"""
-    await message.answer(
-        "Asosiy menyu:",
-        reply_markup=get_main_menu_keyboard('UZ')
-    )
 
 @router.message(AddQuestion.waiting_for_question_uz)
 async def process_question_uz(message: Message, state: FSMContext):
