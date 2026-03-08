@@ -37,6 +37,57 @@ class AddQuestion(StatesGroup):
 class AddProphet(StatesGroup):
     waiting_for_name_uz = State()
     waiting_for_audio = State()
+    
+class AddPromoVideo(StatesGroup):
+    waiting_for_video = State()
+    waiting_for_caption = State() 
+
+@dp.message(lambda msg: msg.text == "🎬 Reklama video qo'shish" and is_admin(msg.from_user.id))
+async def add_promo_start(message: Message, state: FSMContext):
+    await message.answer(
+        "📹 **Yangi reklama videosi qo'shish**\n\n"
+        "Video faylni yuboring (MP4 formatida):"
+    )
+    await state.set_state(AddPromoVideo.waiting_for_video)
+
+@dp.message(AddPromoVideo.waiting_for_video, F.video)
+async def process_promo_video(message: Message, state: FSMContext):
+    video_id = message.video.file_id
+    await state.update_data(video_id=video_id)
+    
+    await message.answer(
+        "✅ Video qabul qilindi!\n\n"
+        "Endi video uchun sarlavha (caption) kiriting (ixtiyoriy):\n"
+        "Masalan: `Bizning kanalimizga obuna bo'ling!`\n\n"
+        "Yoki /skip ni bosing"
+    )
+    await state.set_state(AddPromoVideo.waiting_for_caption)
+
+@dp.message(AddPromoVideo.waiting_for_caption)
+async def process_promo_caption(message: Message, state: FSMContext):
+    caption = message.text if message.text != "/skip" else ""
+    
+    data = await state.get_data()
+    video_id = data.get('video_id')
+    
+    # Bazaga saqlash
+    promo_id = db.add_promo_video(video_id, caption, message.from_user.id)
+    
+    if promo_id:
+        await message.answer(
+            f"✅ **Reklama video muvaffaqiyatli qo'shildi!** (ID: {promo_id})\n\n"
+            f"📹 Video ID: `{video_id}`\n"
+            f"📝 Caption: {caption if caption else 'Yo'q'}\n\n"
+            f"Yangi foydalanuvchilar salovotlardan keyin ushbu videoni ko'rishadi."
+        )
+    else:
+        await message.answer("❌ Xatolik yuz berdi!")
+    
+    await state.clear()
+
+@dp.message(AddPromoVideo.waiting_for_caption, Command("skip"))
+async def skip_caption(message: Message, state: FSMContext):
+    await process_promo_caption(message, state)    
 
 # MUHIM: Barcha admin handlerlari uchun maxsus filter
 @router.message(lambda message: message.from_user.id in admin_ids)

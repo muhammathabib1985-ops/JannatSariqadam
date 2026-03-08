@@ -195,6 +195,28 @@ class Database:
             )
         ''')
         
+        # Admin video reklamalar jadvali
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS promo_videos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_file_id TEXT NOT NULL,
+                caption TEXT,
+                created_at TIMESTAMP,
+                created_by INTEGER,
+                is_active BOOLEAN DEFAULT 1
+            )
+        ''')
+
+        # Foydalanuvchi ko'rgan reklamalar jadvali (har bir foydalanuvchi faqat 1 marta ko'rishi uchun)
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_promo_views (
+                user_id INTEGER PRIMARY KEY,
+                video_id INTEGER,
+                viewed_at TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                FOREIGN KEY (video_id) REFERENCES promo_videos(id)
+            )
+        ''')
         self.conn.commit()
         print("✅ Database tables created successfully")
         
@@ -832,5 +854,68 @@ class Database:
             return excluded
         except Exception as e:
             print(f"Error getting excluded questions: {e}")
-            return []        
+            return []  
+
+    def add_promo_video(self, video_file_id, caption, admin_id):
+        """Yangi reklama videosini qo'shish"""
+        try:
+            self.cursor.execute('''
+                INSERT INTO promo_videos (video_file_id, caption, created_at, created_by)
+                VALUES (?, ?, ?, ?)
+            ''', (video_file_id, caption, datetime.now(), admin_id))
+            self.conn.commit()
+            return self.cursor.lastrowid
+        except Exception as e:
+            print(f"Error adding promo video: {e}")
+            return None
+
+    def get_active_promo_video(self):
+        """Faol reklama videosini olish (oxirgi qo'shilgan)"""
+        try:
+            self.cursor.execute('''
+                SELECT id, video_file_id, caption FROM promo_videos 
+                WHERE is_active = 1 
+                ORDER BY created_at DESC 
+                LIMIT 1
+            ''')
+            return self.cursor.fetchone()
+        except Exception as e:
+            print(f"Error getting promo video: {e}")
+            return None
+
+    def has_user_seen_promo(self, user_id):
+        """Foydalanuvchi reklamani ko'rganligini tekshirish"""
+        try:
+            self.cursor.execute('''
+                SELECT video_id FROM user_promo_views WHERE user_id = ?
+            ''', (user_id,))
+            return self.cursor.fetchone() is not None
+        except Exception as e:
+            print(f"Error checking promo view: {e}")
+            return False
+
+    def mark_promo_viewed(self, user_id, video_id):
+        """Foydalanuvchi reklamani ko'rganligini belgilash"""
+        try:
+            self.cursor.execute('''
+                INSERT OR REPLACE INTO user_promo_views (user_id, video_id, viewed_at)
+                VALUES (?, ?, ?)
+            ''', (user_id, video_id, datetime.now()))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error marking promo viewed: {e}")
+            return False
+
+    def deactivate_promo_video(self, video_id):
+        """Reklama videosini faolsizlantirish"""
+        try:
+            self.cursor.execute('''
+                UPDATE promo_videos SET is_active = 0 WHERE id = ?
+            ''', (video_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error deactivating promo: {e}")
+            return False        
             

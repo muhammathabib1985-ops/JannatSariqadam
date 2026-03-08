@@ -541,7 +541,6 @@ async def translate_text(text: str, target_lang: str) -> str:
         print(f"❌ Tarjima xatoligi: {e}")
         return text
 
-# Start handler
 @dp.message(CommandStart())
 async def command_start_handler(message: Message, state: FSMContext):
     user_id = message.from_user.id
@@ -592,6 +591,18 @@ async def command_start_handler(message: Message, state: FSMContext):
         # Yangi foydalanuvchi
         salawat_count[user_id] = 1
         
+        # Reklama video bormi tekshirish
+        promo_video = db.get_active_promo_video()
+        has_seen = db.has_user_seen_promo(user_id)
+        
+        if promo_video and not has_seen:
+            # Reklama video bor va foydalanuvchi ko'rmagan
+            # Salovotlardan keyin video yuborish uchun ma'lumotni saqlaymiz
+            user_sessions[user_id]['show_promo_after_salawat'] = True
+            user_sessions[user_id]['promo_video_id'] = promo_video[0]
+            user_sessions[user_id]['promo_video_file'] = promo_video[1]
+            user_sessions[user_id]['promo_caption'] = promo_video[2] if promo_video[2] else None
+        
         welcome_text = (
             "🤲 Assalomu Aleykum!\n\n"
             "Rasululloh ﷺ ga salovat aytish bilan boshlaymiz.\n"
@@ -605,7 +616,6 @@ async def command_start_handler(message: Message, state: FSMContext):
             reply_markup=get_salawat_keyboard(1, 'UZ')
         )
 
-# Salovat tugmasi bosilganda
 @dp.message(lambda msg: msg.text and "salovat ayting" in msg.text.lower())
 async def salavat_handler(message: Message, state: FSMContext):
     user_id = message.from_user.id
@@ -628,6 +638,34 @@ async def salavat_handler(message: Message, state: FSMContext):
         )
     else:
         salawat_count[user_id] = 0
+        
+        # ===== REKLAMA VIDEO YUBORISH =====
+        if user_sessions.get(user_id, {}).get('show_promo_after_salawat'):
+            promo_file = user_sessions[user_id].get('promo_video_file')
+            promo_caption = user_sessions[user_id].get('promo_caption')
+            promo_id = user_sessions[user_id].get('promo_video_id')
+            
+            if promo_file:
+                # Video yuborish
+                await message.answer(
+                    "📢 **Bot reklamasi**\n\nBir daqiqa...",
+                    reply_markup=ReplyKeyboardRemove()
+                )
+                await asyncio.sleep(0.5)
+                
+                await message.answer_video(
+                    video=promo_file,
+                    caption=promo_caption,
+                    supports_streaming=True
+                )
+                
+                # Foydalanuvchi ko'rgan deb belgilash
+                db.mark_promo_viewed(user_id, promo_id)
+                
+                # 2 soniya kutish
+                await asyncio.sleep(2)
+        
+        # Til tanlash
         await message.answer(
             "✨ Barakalla! 10 ta salovat aytdingiz.\n\n"
             "Endi o'zingizni tanishtirish uchun tilni tanlang:",
