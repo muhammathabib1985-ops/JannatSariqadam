@@ -36,65 +36,99 @@ class AddQuestion(StatesGroup):
 
 class AddProphet(StatesGroup):
     waiting_for_name_uz = State()
-    waiting_for_audio = State()
+    waiting_for_video = State()  # audio -> video
     
 class AddPromoVideo(StatesGroup):
     waiting_for_video = State()
     waiting_for_caption = State()
 
 # ============================================
-# REKLAMA VIDEO QO'SHISH HANDLERLARI
+# PAYG'AMBAR QO'SHISH (VIDEO BILAN)
 # ============================================
 
-@router.message(lambda msg: msg.text == "🎬 Reklama video qo'shish" and is_admin(msg.from_user.id))
-async def add_promo_start(message: Message, state: FSMContext):
-    """Reklama video qo'shishni boshlash"""
-    print(f"🔴🔴🔴 Reklama video qo'shish tugmasi bosildi! Admin: {message.from_user.id}")
+async def add_prophet_start(message: Message, state: FSMContext):
+    """Payg'ambar qo'shishni boshlash"""
     await message.answer(
-        "📹 **Yangi reklama videosi qo'shish**\n\n"
-        "Video faylni yuboring (MP4 formatida):"
+        "👤 Yangi payg'ambar qo'shish\n\n"
+        "Payg'ambar nomini O'ZBEK tilida kiriting:"
     )
-    await state.set_state(AddPromoVideo.waiting_for_video)
+    await state.set_state(AddProphet.waiting_for_name_uz)
 
-@router.message(AddPromoVideo.waiting_for_video, F.video)
-async def process_promo_video(message: Message, state: FSMContext):
-    """Video qabul qilish"""
+@router.message(AddProphet.waiting_for_name_uz)
+async def process_prophet_name(message: Message, state: FSMContext):
+    """Payg'ambar nomini qabul qilish"""
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        return
+    
+    name = message.text.strip()
+    if not name:
+        await message.answer("❌ Nom bo'sh bo'lmasligi kerak!")
+        return
+    
+    await state.update_data(name_uz=name)
+    
+    await message.answer(
+        "✅ Nom qabul qilindi!\n\n"
+        "Endi payg'ambar haqidagi **VIDEO** faylni yuboring:"
+    )
+    await state.set_state(AddProphet.waiting_for_video)  # waiting_for_video
+
+@router.message(AddProphet.waiting_for_video, F.video)  # F.video bilan
+async def process_prophet_video(message: Message, state: FSMContext):
+    """Video faylni qabul qilish"""
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        return
+    
+    if not message.video:
+        await message.answer("❌ Iltimos, video fayl yuboring!")
+        return
+    
     video_id = message.video.file_id
-    await state.update_data(video_id=video_id)
-    
-    await message.answer(
-        "✅ Video qabul qilindi!\n\n"
-        "Endi video uchun sarlavha (caption) kiriting (ixtiyoriy):\n"
-        "Masalan: `Bizning kanalimizga obuna bo'ling!`\n\n"
-        "Yoki /skip ni bosing"
-    )
-    await state.set_state(AddPromoVideo.waiting_for_caption)
-
-@router.message(AddPromoVideo.waiting_for_caption)
-async def process_promo_caption(message: Message, state: FSMContext):
-    """Caption qabul qilish va saqlash"""
-    caption = message.text if message.text != "/skip" else ""
-    
     data = await state.get_data()
-    video_id = data.get('video_id')
     
-    # Bazaga saqlash
-    promo_id = db.add_promo_video(video_id, caption, message.from_user.id)
-    
-    if promo_id:
-        await message.answer(
-            f"✅ **Reklama video muvaffaqiyatli qo'shildi!** (ID: {promo_id})\n\n"
-            f"📹 Video ID: `{video_id}`\n"
-            f"📝 Caption: {caption if caption else 'Yo\\'q'}\n\n"
-            f"Yangi foydalanuvchilar salovotlardan keyin ushbu videoni ko'rishadi."
+    try:
+        # Barcha tillarga tarjima qilish
+        name_ru = await translator.translate(data['name_uz'], dest='ru')
+        name_ru = name_ru.text
+        name_ar = await translator.translate(data['name_uz'], dest='ar')
+        name_ar = name_ar.text
+        name_en = await translator.translate(data['name_uz'], dest='en')
+        name_en = name_en.text
+        
+        # Database ga saqlash (video_file_id)
+        prophet_id = db.add_prophet(
+            data['name_uz'], 
+            name_ru, 
+            name_ar, 
+            name_en, 
+            video_id  # video_id saqlanadi
         )
-    else:
-        await message.answer("❌ Xatolik yuz berdi!")
+        
+        success_text = (
+            f"✅ Payg'ambar muvaffaqiyatli qo'shildi! (ID: {prophet_id})\n\n"
+            f"📝 O'zbekcha: {data['name_uz']}\n"
+            f"🇷🇺 Ruscha: {name_ru}\n"
+            f"🇸🇦 Arabcha: {name_ar}\n"
+            f"🇬🇧 Inglizcha: {name_en}\n\n"
+            f"📹 Video ID: `{video_id}`"
+        )
+        
+        await message.answer(success_text)
+        await message.answer(
+            "Admin panel:",
+            reply_markup=get_admin_keyboard('UZ')
+        )
+        
+    except Exception as e:
+        logger.error(f"Error adding prophet: {e}")
+        await message.answer(f"❌ Xatolik: {e}")
     
     await state.clear()
 
-@router.message(AddPromoVideo.waiting_for_video)
-async def process_promo_video_error(message: Message, state: FSMContext):
+@router.message(AddProphet.waiting_for_video)
+async def process_prophet_video_error(message: Message, state: FSMContext):
     """Video emas boshqa narsa yuborilsa"""
     await message.answer(
         "❌ **Xato!** Iltimos, video fayl yuboring (MP4 formatida).\n\n"

@@ -919,3 +919,24 @@ class Database:
             print(f"Error deactivating promo: {e}")
             return False        
             
+    def add_prophet(self, name_uz, name_ru, name_ar, name_en, video_file_id):  # audio -> video
+        try:
+            self.cursor.execute('''
+                INSERT INTO prophets (name_uz, name_ru, name_ar, name_en, video_file_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (name_uz, name_ru, name_ar, name_en, video_file_id, datetime.now()))
+            self.conn.commit()
+            return self.cursor.lastrowid
+        except Exception as e:
+            print(f"Error adding prophet: {e}")
+            return None
+
+    def get_prophet_video(self, prophet_id):  # audio -> video
+        try:
+            self.cursor.execute('SELECT video_file_id FROM prophets WHERE id = ?', (prophet_id,))
+            result = self.cursor.fetchone()
+            return result[0] if result else None
+        except Exception as e:
+            print(f"Error getting prophet video: {e}")
+            return None        
+            
